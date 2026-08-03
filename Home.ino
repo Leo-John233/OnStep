@@ -23,8 +23,7 @@ void checkHome() {
       if (guideDirAxis2 == 'n' || guideDirAxis2 == 's') guideDirAxis2='b';
       safetyLimitsOn=true;
       // 传感器回零未完成时不能继续信任开环步数位置。
-      mountPositionTrusted = false;
-      positionRecoveryRequired = true;
+      invalidatePositionReference();
       gotoAbortState = GOTO_ABORT_NONE;
       findHomeMode=FH_OFF;
     } else {
@@ -126,14 +125,7 @@ void checkHome() {
     #endif
 
     // 真实回原点完成后，所有结构类型都重新建立可信坐标基准。
-    mountPositionTrusted = true;
-    positionRecoveryRequired = false;
-    gotoAbortState = GOTO_ABORT_NONE;
-#if LIMIT_SENSE != OFF
-    // 只有启用 LIMIT_SENSE 时才清理限位方向锁。
-    Axis1_LimitLock = 0;
-    Axis2_LimitLock = 0;
-#endif
+    completePositionRecovery();
     abortGoto = 0;
     lastTrackingState = TrackingNone;
     abortTrackingState = TrackingNone;
@@ -162,11 +154,46 @@ void StopAxis2() {
 // moves telescope to the home position, then stops tracking
 // 将望远镜移回初始位置，然后停止跟踪
 CommandErrors goHome(bool fast) {
+  // 开机/硬安全恢复要求 Home 时，合法的恢复流程优先于保存的 Parked 标记。
+  // 无传感器仅 HOME_RETURN_ONLY 可覆盖 Parked；有传感器时非 READY 状态均可重新搜索 Home。
+#if HOME_SENSE == OFF
+  const bool homeMayOverridePark = positionHomeReturnOnly();
+#else
+  const bool homeMayOverridePark = !positionReady();
+#endif
+  if (parkStatus == Parked && homeMayOverridePark) {
+    parkStatus=NotParked;
+    nv.write(EE_parkStatus,parkStatus);
+  }
+
   CommandErrors e=validateGoto();
+
+#if HOME_SENSE == OFF
+  // 无 Home 传感器时，开机回零锁或物理限位恢复可使用保留坐标执行 :hC#。
+  // 仅 HOME_RETURN_ONLY/READY 可使用坐标 Home；Park、正在运动、导星、驱动故障和 UNKNOWN 均不可绕过。
+  const bool coordinateHomeSafe =
+    parkStatus == NotParked &&
+    !trackingSyncInProgress() &&
+    trackingState != TrackingMoveTo &&
+    guideDirAxis1 == 0 && guideDirAxis2 == 0 &&
+    !faultAxis1 && !faultAxis2;
+
+  const bool coordinateRecovery =
+    coordinateHomeSafe && positionHomeReturnOnly();
+
+  const bool normalCoordinateHome =
+    coordinateHomeSafe && positionReady();
+
+  if (e == CE_SLEW_ERR_IN_STANDBY && (coordinateRecovery || normalCoordinateHome)) {
+    enableStepperDrivers();
+    e = CE_NONE;
+    if (coordinateRecovery) VLF("MSG: :hC# accepted as coordinate Home recovery");
+  }
+#endif
   
 #if HOME_SENSE != OFF
   if (e != CE_NONE && e != CE_SLEW_ERR_IN_STANDBY) return e;
-  // 自动回零是恢复 standby/位置不可信状态的合法通道。
+  // 自动回零是恢复 standby、HOME_RETURN_ONLY 或 UNKNOWN 状态的合法通道。
   if (e == CE_SLEW_ERR_IN_STANDBY) e = CE_NONE;
 
   if (findHomeMode != FH_OFF) return CE_MOUNT_IN_MOTION;
@@ -177,8 +204,7 @@ CommandErrors goHome(bool fast) {
   trackingState=TrackingNone;
 
   // 自动回零开始后，直到 FH_DONE 都不再信任原开环坐标。
-  mountPositionTrusted = false;
-  positionRecoveryRequired = true;
+  invalidatePositionReference();
   gotoAbortState = GOTO_ABORT_NONE;
 
   // decide direction to guide
@@ -232,7 +258,13 @@ CommandErrors goHome(bool fast) {
   }
   return e;
 #else
-  if (e != CE_NONE) return e; 
+  if (e != CE_NONE) return e;
+
+  const bool recoveryInProgress = positionHomeReturnOnly();
+  if (recoveryInProgress) {
+    // 受限返航期间暂时绕过软件坐标限制；物理限位检测仍保留既定的回零最高权限旁路。
+    safetyLimitsOn = false;
+  }
 
   abortTrackingState=trackingState;
 
@@ -301,15 +333,7 @@ CommandErrors setHome() {
 
   // Set Home 的语义是用户确认机械位置与定义的 Home 坐标一致，
   // 因此无论是否安装 HOME_SENSE 都可重新建立可信坐标基准。
-  mountPositionTrusted = true;
-  positionRecoveryRequired = false;
-  gotoAbortState = GOTO_ABORT_NONE;
-
-#if LIMIT_SENSE != OFF
-  // 有 LIMIT_SENSE 时，手动 setHome 后清除物理限位方向锁。
-  Axis1_LimitLock = 0;
-  Axis2_LimitLock = 0;
-#endif
+  completePositionRecovery();
 
   // 清理上一次安全中断或限位导致的残留状态。
   abortGoto = 0;

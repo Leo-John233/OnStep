@@ -864,6 +864,18 @@
   #error "Configuration (Config.h): Setting GUIDE_DISABLE_BACKLASH invalid, use OFF or ON only."
 #endif
 
+#ifndef HOME_REQUIRED_ON_BOOT
+  #error "Configuration (Config.h): Setting HOME_REQUIRED_ON_BOOT must be present!"
+#elif HOME_REQUIRED_ON_BOOT != OFF && HOME_REQUIRED_ON_BOOT != ON
+  #error "Configuration (Config.h): Setting HOME_REQUIRED_ON_BOOT invalid, use OFF or ON only."
+#endif
+
+#ifndef HOME_REQUIRED_AFTER_LIMIT
+  #error "Configuration (Config.h): Setting HOME_REQUIRED_AFTER_LIMIT must be present!"
+#elif HOME_REQUIRED_AFTER_LIMIT != OFF && HOME_REQUIRED_AFTER_LIMIT != ON
+  #error "Configuration (Config.h): Setting HOME_REQUIRED_AFTER_LIMIT invalid, use OFF or ON only."
+#endif
+
 #ifndef TRACK_AUTOSTART
   #error "Configuration (Config.h): Setting TRACK_AUTOSTART must be present!"
 #elif TRACK_AUTOSTART != OFF && TRACK_AUTOSTART != ON

@@ -38,7 +38,7 @@
 #define FirmwareDate          __DATE__
 #define FirmwareVersionMajor  4
 #define FirmwareVersionMinor  24      // 次版本号 0 到 99
-#define FirmwareVersionPatch  "v8"     // 补丁版本，例如主.次 补丁: 1.3c
+#define FirmwareVersionPatch  "s"     // 2026-08-03: three-state position reference and ZWO :hC# recovery
 #define FirmwareVersionConfig 3       // 内部使用，用于跟踪配置文件更改
 #define FirmwareName          "On-Step"
 #define FirmwareTime          __TIME__
@@ -47,21 +47,37 @@
 
 // --- [修改开始] 新增限位锁死状态变量 ---
 // 0=无锁死, 1=正向锁死(如East/North), -1=反向锁死(如West/South)
-int Axis1_LimitLock = 0; 
+int Axis1_LimitLock = 0;
 int Axis2_LimitLock = 0;
-unsigned long lastLimitTriggerTime = 0; // [新增] 用于非阻塞消抖计时
-// GOTO 安全中断分类。该状态与 HOME_SENSE / LIMIT_SENSE 的编译配置无关，
-// 避免关闭传感器后安全中断被误判为正常 GOTO 完成。
-enum GotoAbortState { GOTO_ABORT_NONE, GOTO_ABORT_RECOVERABLE, GOTO_ABORT_POSITION_LOST };
+bool physicalLimitLatched = false;
+unsigned long lastLimitTriggerTime = 0; // 用于非阻塞消抖计时
+
+// GOTO 的附加安全结果只记录扩展功能产生的结果，不改写原版运动状态语义。
+// STOPPED: 用户取消或软件限制；恢复 GOTO 前真实跟踪状态。
+// HARD_STOP: 物理限位急停但配置为不强制重新 Home；停止跟踪但保留坐标可信度。
+// RECOVERY_REQUIRED: 物理限位或驱动故障要求 Home/Set Home；位置参考状态单独决定能否坐标返航。
+enum GotoAbortState {
+  GOTO_ABORT_NONE,
+  GOTO_ABORT_STOPPED,
+  GOTO_ABORT_HARD_STOP,
+  GOTO_ABORT_RECOVERY_REQUIRED
+};
 GotoAbortState gotoAbortState = GOTO_ABORT_NONE;
 
-// 当前步数坐标是否仍可作为真实机械位置使用。
-// 标准 OnStep 启动假定赤道仪位于已知起始位置；MOTOR_HOLD_ON_BOOT 会显式改为 false。
-bool mountPositionTrusted = true;
+// 仅普通天体 GOTO 可以请求“成功到达后开始恒星跟踪”。
+// 该标志不修改 lastTrackingState，因此 Park、Home、软件中止和硬中止保持原版语义。
+bool gotoStartTrackingOnSuccess = false;
 
-// 物理限位、驱动器故障或失败的传感器回零会置位。
-// HOME_SENSE 开启时可通过自动回零恢复；HOME_SENSE 关闭时可在人工放回零位后执行 Set Home 恢复。
-bool positionRecoveryRequired = false;
+// 位置参考状态与正常运动状态完全解耦。
+// READY: 步数坐标可用于所有正常操作。
+// HOME_RETURN_ONLY: 步数坐标仍有效，但普通 GOTO/Tracking 被锁定；HOME_SENSE==OFF 时只允许 :hC# 返回/确认 Home。
+// UNKNOWN: 步数坐标不能作为真实机械位置使用；只允许传感器 Home 或真正 Set Home 恢复。
+enum PositionReferenceState {
+  POSITION_READY,
+  POSITION_HOME_RETURN_ONLY,
+  POSITION_UNKNOWN
+};
+PositionReferenceState positionReferenceState = POSITION_READY;
 
 // 首次上传时，OnStep 会自动初始化 nv 存储器（EEPROM）中的一系列设置。
 // 此选项会强制再次进行初始化。
@@ -180,6 +196,40 @@ weather ambient;
     tmcSpiDriver tmcAxis5(Axis5_M2,Axis5_M1,-1,Axis5_M0,AXIS5_DRIVER_SUBMODEL,AXIS5_DRIVER_RSENSE);
   #endif
 #endif
+
+// -------------------- 扩展安全/恢复状态的统一入口 --------------------
+void clearPhysicalLimitState() {
+  physicalLimitLatched = false;
+  Axis1_LimitLock = 0;
+  Axis2_LimitLock = 0;
+}
+
+bool positionReady() {
+  return positionReferenceState == POSITION_READY;
+}
+
+bool positionHomeReturnOnly() {
+  return positionReferenceState == POSITION_HOME_RETURN_ONLY;
+}
+
+// 开机确认或物理限位安全停止后，坐标仍然有效，但只允许返回 Home。
+void requireCoordinateHomeRecovery() {
+  positionReferenceState = POSITION_HOME_RETURN_ONLY;
+  gotoStartTrackingOnSuccess = false;
+}
+
+// 驱动故障、失败的传感器 Home 等会使开环位置参考真正失效。
+void invalidatePositionReference() {
+  positionReferenceState = POSITION_UNKNOWN;
+  gotoStartTrackingOnSuccess = false;
+}
+
+void completePositionRecovery() {
+  positionReferenceState = POSITION_READY;
+  gotoAbortState = GOTO_ABORT_NONE;
+  gotoStartTrackingOnSuccess = false;
+  clearPhysicalLimitState();
+}
 
 void setup() {
   initPre();
@@ -348,36 +398,46 @@ void setup() {
 #endif
 
 
-// 独立的开机电机保持逻辑：只使能电机，不 tracking，不 setHome
-#if MOTOR_HOLD_ON_BOOT == ON
+// 独立的开机回零保护：与电机保持、TRACK_AUTOSTART 和 HOME_SENSE 分开配置。
+#if HOME_REQUIRED_ON_BOOT == ON
   #if MOUNT_TYPE != ALTAZM
 
-    VLF("MSG: Motor hold on boot - drivers enabled, tracking off, home required");
+    VLF("MSG: Boot home protection - Home/Set Home required before GOTO/tracking");
 
-    // 开机只保持电机时不假定机械位置可信。无论是否安装 HOME_SENSE，
-    // 都需要自动回零或人工放回零位后执行 Set Home 才允许 GOTO/Tracking。
-    mountPositionTrusted = false;
-    positionRecoveryRequired = false;
+#if HOME_SENSE == OFF
+    requireCoordinateHomeRecovery();
+#else
+    invalidatePositionReference();
+#endif
     gotoAbortState = GOTO_ABORT_NONE;
 
-    // 清理限位方向锁
-    Axis1_LimitLock = 0;
-    Axis2_LimitLock = 0;
-
-    // 明确不 tracking
+    // 回零锁优先于 TRACK_AUTOSTART；恢复完成前禁用软件坐标限制。
+    safetyLimitsOn = false;
     trackingState = TrackingNone;
     lastTrackingState = TrackingNone;
     abortTrackingState = TrackingNone;
 
-    // 电机使能，但不发跟踪脉冲
-    enableStepperDrivers();
+  #endif
+#endif
 
-    // 使用 tracking 微步/电流保持，不切 GOTO 模式
+// 独立的开机电机保持：只负责使能驱动器，不建立 Home，也不覆盖 TRACK_AUTOSTART。
+#if MOTOR_HOLD_ON_BOOT == ON
+  #if MOUNT_TYPE != ALTAZM
+
+    VLF("MSG: Motor hold on boot - drivers enabled");
+
+    clearPhysicalLimitState();
+
+#if TRACK_AUTOSTART == OFF
+    trackingState = TrackingNone;
+    lastTrackingState = TrackingNone;
+    abortTrackingState = TrackingNone;
+#endif
+
+    enableStepperDrivers();
     axis1DriverTrackingMode(false);
     axis2DriverTrackingMode(false);
 
-    // 未真实回原点前，不启用坐标安全限制
-    safetyLimitsOn = false;
 
   #endif
 #endif
@@ -474,7 +534,7 @@ void loop2() {
   if (isHoming()) {
       wasHoming = true; // 系统正在回原点
   } else if (wasHoming) {
-      // 不在主循环里直接把 mountPositionTrusted 置 true。
+      // 不在主循环里直接把位置参考置为 READY。
       // 真实自动回零成功只由 Home.ino 的 FH_DONE 阶段确认，避免回零失败也误解锁。
       wasHoming = false;
   }
@@ -561,14 +621,16 @@ void loop2() {
 
       // 1. 【最高权限】回零模式直接放行
       if (isHoming()) {
-          Axis1_LimitLock = 0;
-          Axis2_LimitLock = 0;
-          return; 
+          clearPhysicalLimitState();
+          return;
       }
       
       // 2. 简单的触发滤波
       delay(2);
       if (digitalRead(LimitPin) == LIMIT_SENSE_STATE) {
+
+        // 真实物理限位事件开始。方向锁只在该事件生命周期内有效。
+        physicalLimitLatched = true;
 
         // =========================================================
         // 3. 统一方向定义
@@ -642,17 +704,24 @@ void loop2() {
             generalError = ERR_LIMIT_SENSE;
 
             // 物理限位属于硬中断。是否需要重新回零统一由
-            // stopSlewingAndTracking(SS_LIMIT_HARD) 判定，避免多处重复修改状态。
+            // stopSlewingAndTracking(SS_LIMIT_PHYSICAL) 判定，避免多处重复修改状态。
             stopGuideAxis1(); 
             stopGuideAxis2();
-            stopSlewingAndTracking(SS_LIMIT_HARD);
+            stopSlewingAndTracking(SS_LIMIT_PHYSICAL);
         }
       } 
     } else {
        // [限位松开]
        if (currentTime - lastLimitTriggerTime > 500) {
-           if (guideDirAxis1 == 0 && trackingState != TrackingMoveTo) Axis1_LimitLock = 0;
-           if (guideDirAxis2 == 0 && trackingState != TrackingMoveTo) Axis2_LimitLock = 0;
+           // 共用 IO 的方向锁作为一个完整事件统一释放，避免单轴先清锁后残留另一轴状态。
+           if (guideDirAxis1 == 0 && guideDirAxis2 == 0 &&
+               trackingState != TrackingMoveTo) {
+             clearPhysicalLimitState();
+
+             // 保持位置恢复锁，但清除已稳定释放的瞬时限位错误。
+             // 部分 ZWO/ASCOM 控制端在 ERR_LIMIT_SENSE 持续存在时不会继续发送 :hC#。
+             if (generalError == ERR_LIMIT_SENSE) generalError = ERR_NONE;
+           }
        }
     }
 #endif
@@ -854,28 +923,46 @@ void loop2() {
 // 根据需要停止快速运动
 // SS_ALL_FAST 停止旋转（Slewing）但不停止跟踪
 // SS_LIMIT 停止 GOTO + 螺旋搜寻 + 跟踪
-// SS_LIMIT_HARD 停止旋转 + 跟踪
+// SS_LIMIT_HARD 停止旋转 + 跟踪，并始终要求重新建立坐标
+// SS_LIMIT_PHYSICAL 停止旋转 + 跟踪；是否强制回零由 HOME_REQUIRED_AFTER_LIMIT 控制
 // SS_LIMIT_AXIS1_MIN 停止 GOTO + 螺旋搜寻 + 跟踪，并停止/阻止反向的赤经/方位角导星
 // SS_LIMIT_AXIS1_MAX 停止 GOTO + 螺旋搜寻 + 跟踪，并停止/阻止正向的赤经/方位角导星
 // SS_LIMIT_AXIS2_MIN 停止 GOTO + 螺旋搜寻 + 跟踪，并停止/阻止反向的赤纬/高度角导星
 // SS_LIMIT_AXIS2_MAX 停止 GOTO + 螺旋搜寻 + 跟踪，并停止/阻止正向的赤纬/高度角导星
 void stopSlewingAndTracking(StopSlewActions ss) {
 
-  // 物理限位和驱动器故障统一使用 SS_LIMIT_HARD。它们可能造成丢步，
-  // 因此位置可信状态必须与 HOME_SENSE / LIMIT_SENSE 是否启用完全解耦。
-  if (ss == SS_LIMIT_HARD) {
-    mountPositionTrusted = false;
-    positionRecoveryRequired = true;
-    if (trackingState == TrackingMoveTo) gotoAbortState = GOTO_ABORT_POSITION_LOST;
+  // 硬安全层只处理真实物理限位/驱动故障，不参与普通软件限位和手动控制状态。
+  const bool driverPositionLost = (ss == SS_LIMIT_HARD);
+  bool recoveryRequired = driverPositionLost;
+#if HOME_REQUIRED_AFTER_LIMIT == ON
+  if (ss == SS_LIMIT_PHYSICAL) recoveryRequired = true;
+#endif
+
+  if (recoveryRequired) {
+    if (driverPositionLost) {
+      invalidatePositionReference();
+    } else {
+#if HOME_SENSE == OFF
+      // 限位在机械堵转前停止：保留步数参考，只锁定普通观测并允许 :hC# 返航。
+      requireCoordinateHomeRecovery();
+#else
+      // 有 Home 传感器时不依赖限位停止位置，要求重新搜索绝对 Home。
+      invalidatePositionReference();
+#endif
+    }
+    safetyLimitsOn = false;
+    if (trackingState == TrackingMoveTo) gotoAbortState = GOTO_ABORT_RECOVERY_REQUIRED;
+  } else if (ss == SS_LIMIT_PHYSICAL) {
+    // 不强制 Home 时仍是硬急停：坐标保持可信，但不能自动恢复跟踪。
+    gotoStartTrackingOnSuccess = false;
+    if (trackingState == TrackingMoveTo) gotoAbortState = GOTO_ABORT_HARD_STOP;
   }
 
   if (trackingState == TrackingMoveTo) {
 
-    // 软件轴范围、中天和高度限制属于可恢复中止；硬故障状态优先级更高，
-    // 不能被后续的软件停止原因覆盖。
-    if (ss != SS_ALL_FAST && gotoAbortState == GOTO_ABORT_NONE) {
-      gotoAbortState = GOTO_ABORT_RECOVERABLE;
-    }
+    // 用户取消、软件轴范围、中天和高度限制均沿用原版 GOTO 完成语义。
+    // 这里只记录“未正常到达”，防止 Motor Hold 自动跟踪请求在中止后生效。
+    if (gotoAbortState == GOTO_ABORT_NONE) gotoAbortState = GOTO_ABORT_STOPPED;
 
     if (!abortGoto) {
       abortGoto = StartAbortGoto;
@@ -886,7 +973,7 @@ void stopSlewingAndTracking(StopSlewActions ss) {
 
     if (spiralGuide) stopGuideSpiral();
 
-    if (ss == SS_ALL_FAST || ss == SS_LIMIT_HARD) {
+    if (ss == SS_ALL_FAST || ss == SS_LIMIT_HARD || ss == SS_LIMIT_PHYSICAL) {
       stopGuideAxis1();
       stopGuideAxis2();
     } else

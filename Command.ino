@@ -1329,22 +1329,9 @@ void processCommands() {
       //            Returns: Nothing
       if ((command[1] == 'e' || command[1] == 'w') && parameter[0] == 0) {
 
-        // 手动移动不受位置可信状态限制；
-        // 只有启用 LIMIT_SENSE 时，才拦截已经锁死的物理限位危险方向。
-        bool blockedByLimitAxis1 = false;
-#if LIMIT_SENSE != OFF
-        blockedByLimitAxis1 =
-          ((command[1] == 'e' && Axis1_LimitLock == 1) ||
-           (command[1] == 'w' && Axis1_LimitLock == -1));
-#endif
-
-        if (blockedByLimitAxis1) {
-          boolReply = false;
-          commandError = CE_NONE;  // 静默拒绝危险方向，避免客户端刷错误
-        } else {
-          commandError=startGuideAxis1(command[1],currentGuideRate,GUIDE_TIME_LIMIT*1000,false);
-          boolReply=false;
-        }
+        // 手动运动的全部状态/限位判断统一由 Guide.ino 处理，避免重复检查和静默卡死。
+        commandError=startGuideAxis1(command[1],currentGuideRate,GUIDE_TIME_LIMIT*1000,false);
+        boolReply=false;
 
       } else
 
@@ -1352,22 +1339,9 @@ void processCommands() {
       //            Returns: Nothing
       if ((command[1] == 'n' || command[1] == 's') && parameter[0] == 0) {
 
-        // 手动移动不受位置可信状态限制；
-        // 只有启用 LIMIT_SENSE 时，才拦截已经锁死的物理限位危险方向。
-        bool blockedByLimitAxis2 = false;
-#if LIMIT_SENSE != OFF
-        blockedByLimitAxis2 =
-          ((command[1] == 'n' && Axis2_LimitLock == 1) ||
-           (command[1] == 's' && Axis2_LimitLock == -1));
-#endif
-
-        if (blockedByLimitAxis2) {
-          boolReply = false;
-          commandError = CE_NONE;
-        } else {
-          commandError=startGuideAxis2(command[1],currentGuideRate,GUIDE_TIME_LIMIT*1000,false);
-          boolReply=false;
-        }
+        // 手动运动的全部状态/限位判断统一由 Guide.ino 处理，避免重复检查和静默卡死。
+        commandError=startGuideAxis2(command[1],currentGuideRate,GUIDE_TIME_LIMIT*1000,false);
+        boolReply=false;
 
       } else
 // :Mp#  Move Telescope for sPiral search at current guide rate
@@ -2092,7 +2066,7 @@ if (command[1] == 'S' && parameter[0] == 0)  {
       if (command[0] == 'T' && parameter[0] == 0) {
         // Tracking enable 同样只依赖位置是否可信，而不依赖是否安装传感器。
         const bool trackingBlockedUntilRecovery =
-          (command[1] == 'e' && (!mountPositionTrusted || positionRecoveryRequired));
+          (command[1] == 'e' && !positionReady());
 
         if (trackingBlockedUntilRecovery) {
           // 保持 boolReply=true，让命令处理器立即返回字符 '0'。

@@ -259,62 +259,80 @@ void moveTo() {
         sei();
   
         if (homeMount) {
-          // clear the backlash
-          if (parkClearBacklash() == -1) return;  // working, no error flagging
+          const GotoAbortState completedHomeState = gotoAbortState;
 
-          // sound goto done
-          soundAlert();
-
-          // restore trackingState
-          trackingState=lastTrackingState; lastTrackingState=TrackingNone;
-          SiderealClockSetInterval(siderealInterval);
-
-          // at the polar home position
-          homeMount=false;
-          if (AXIS2_TANGENT_ARM == OFF) atHome=true;
-
-          // A successful coordinate/Home-sensor homing operation re-establishes
-          // the open-loop position reference.
-          mountPositionTrusted=true;
-          positionRecoveryRequired=false;
-          gotoAbortState=GOTO_ABORT_NONE;
-#if LIMIT_SENSE != OFF
-          Axis1_LimitLock=0;
-          Axis2_LimitLock=0;
-#endif
-
-          VLF("MSG: Homing done");
-        } else {
-          // Preserve the stock motion-completion path, but do not report a
-          // safety-aborted move as a successful GOTO.
-          if (gotoAbortState != GOTO_ABORT_NONE) {
+          // :hC# 只有真实到达 Home 才能解锁。用户取消、软件停止、物理限位或
+          // 驱动故障均保留原位置参考状态，避免“命令已启动即视为回零成功”。
+          if (completedHomeState != GOTO_ABORT_NONE) {
+            homeMount=false;
             trackingSyncSeconds=0;
-
-            if (gotoAbortState == GOTO_ABORT_POSITION_LOST ||
-                positionRecoveryRequired || !mountPositionTrusted) {
-              trackingState=TrackingNone;
-              lastTrackingState=TrackingNone;
-              mountPositionTrusted=false;
-              positionRecoveryRequired=true;
-
-              SiderealClockSetInterval(siderealInterval);
-              setDeltaTrackingRate();
-              if (generalError == ERR_NONE) generalError=ERR_LIMIT_SENSE;
-              VLF("MSG: Goto failed by hard safety abort; position recovery required");
-            } else {
-              trackingState=lastTrackingState;
-              lastTrackingState=TrackingNone;
-              SiderealClockSetInterval(siderealInterval);
-              setDeltaTrackingRate();
-              VLF("MSG: Goto stopped by recoverable software limit");
-            }
-            gotoAbortState=GOTO_ABORT_NONE;
-          } else {
-            trackingState=lastTrackingState;
+            trackingState=TrackingNone;
             lastTrackingState=TrackingNone;
+            gotoStartTrackingOnSuccess=false;
+            gotoAbortState=GOTO_ABORT_NONE;
+
             SiderealClockSetInterval(siderealInterval);
             setDeltaTrackingRate();
-            VLF("MSG: Goto done");
+            VLF("MSG: Homing stopped; recovery state retained");
+          } else {
+            // clear the backlash
+            if (parkClearBacklash() == -1) return;  // working, no error flagging
+
+            // sound goto done
+            soundAlert();
+
+            // restore trackingState
+            trackingState=lastTrackingState; lastTrackingState=TrackingNone;
+            SiderealClockSetInterval(siderealInterval);
+
+            // at the polar home position
+            homeMount=false;
+            if (AXIS2_TANGENT_ARM == OFF) atHome=true;
+
+            // 仅成功到达 Home 才重新建立位置参考并解除恢复锁。
+            completePositionRecovery();
+
+            VLF("MSG: Homing done");
+          }
+        } else {
+          const GotoAbortState completedGotoState = gotoAbortState;
+
+          if (completedGotoState == GOTO_ABORT_RECOVERY_REQUIRED ||
+              !positionReady()) {
+            // 只有真实硬故障或配置要求的物理限位进入恢复锁；三态位置参考决定可用恢复方式。
+            trackingSyncSeconds=0;
+            trackingState=TrackingNone;
+            lastTrackingState=TrackingNone;
+            gotoStartTrackingOnSuccess=false;
+
+            SiderealClockSetInterval(siderealInterval);
+            setDeltaTrackingRate();
+            if (generalError == ERR_NONE) generalError=ERR_LIMIT_SENSE;
+            VLF("MSG: Goto failed by hard safety abort; position recovery required");
+          } else if (completedGotoState == GOTO_ABORT_HARD_STOP) {
+            // 物理限位急停但不要求重新 Home：保留坐标，明确停止跟踪。
+            trackingSyncSeconds=0;
+            trackingState=TrackingNone;
+            lastTrackingState=TrackingNone;
+            gotoStartTrackingOnSuccess=false;
+
+            SiderealClockSetInterval(siderealInterval);
+            setDeltaTrackingRate();
+            VLF("MSG: Goto stopped by physical limit");
+          } else {
+            // 正常完成和普通软件/用户中止均恢复原版真实跟踪状态。
+            trackingState=lastTrackingState;
+            lastTrackingState=TrackingNone;
+
+            // Motor Hold 的自动跟踪仅在普通天体 GOTO 正常到达后生效。
+            if (completedGotoState == GOTO_ABORT_NONE && gotoStartTrackingOnSuccess) {
+              trackingState=TrackingSidereal;
+            }
+
+            SiderealClockSetInterval(siderealInterval);
+            setDeltaTrackingRate();
+            if (completedGotoState == GOTO_ABORT_NONE) VLF("MSG: Goto done");
+            else VLF("MSG: Goto stopped");
 
             // allow 5 seconds for synchronization of coordinates after goto ends
             if (trackingState == TrackingSidereal) {
@@ -322,6 +340,9 @@ void moveTo() {
               VLF("MSG: Tracking sync started");
             }
           }
+
+          gotoAbortState=GOTO_ABORT_NONE;
+          gotoStartTrackingOnSuccess=false;
         }
       }
     }

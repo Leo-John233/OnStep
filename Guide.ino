@@ -153,17 +153,18 @@ CommandErrors startGuideAxis1(char direction, int guideRate, long guideDuration,
 
   bool escapingPhysicalLimitAxis1 = false;
 #if LIMIT_SENSE != OFF
-  // 物理限位锁只绑定 LIMIT_SENSE：危险方向禁止，反方向允许脱离。
-  if (direction == 'e' && Axis1_LimitLock == 1)  return CE_SLEW_ERR_OUTSIDE_LIMITS;
-  if (direction == 'w' && Axis1_LimitLock == -1) return CE_SLEW_ERR_OUTSIDE_LIMITS;
+  // 物理限位锁只在真实限位事件存续期间有效：危险方向禁止，反方向允许脱离。
+  if (physicalLimitLatched && direction == 'e' && Axis1_LimitLock == 1)  return CE_SLEW_ERR_OUTSIDE_LIMITS;
+  if (physicalLimitLatched && direction == 'w' && Axis1_LimitLock == -1) return CE_SLEW_ERR_OUTSIDE_LIMITS;
 
-  escapingPhysicalLimitAxis1 = (generalError == ERR_LIMIT_SENSE) &&
+  escapingPhysicalLimitAxis1 = physicalLimitLatched &&
                                ((direction == 'e' && Axis1_LimitLock == -1) ||
                                 (direction == 'w' && Axis1_LimitLock == 1));
 #endif
 
-  if (direction == 'e' && !guideEastOk()) return CE_SLEW_ERR_OUTSIDE_LIMITS;
-  if (direction == 'w' && !guideWestOk()) return CE_SLEW_ERR_OUTSIDE_LIMITS;
+  // 脱离真实物理限位时，物理逃逸优先于基于可能失真的坐标软件限制。
+  if (!escapingPhysicalLimitAxis1 && direction == 'e' && !guideEastOk()) return CE_SLEW_ERR_OUTSIDE_LIMITS;
+  if (!escapingPhysicalLimitAxis1 && direction == 'w' && !guideWestOk()) return CE_SLEW_ERR_OUTSIDE_LIMITS;
   if (!escapingPhysicalLimitAxis1 && guideRate < 3 && (generalError == ERR_ALT_MIN ||
                                                        generalError == ERR_LIMIT_SENSE ||
                                                        generalError == ERR_DEC ||
@@ -202,17 +203,18 @@ CommandErrors startGuideAxis2(char direction, int guideRate, long guideDuration,
 
   bool escapingPhysicalLimitAxis2 = false;
 #if LIMIT_SENSE != OFF
-  // 物理限位锁只绑定 LIMIT_SENSE：危险方向禁止，反方向允许脱离。
-  if (direction == 'n' && Axis2_LimitLock == 1)  return CE_SLEW_ERR_OUTSIDE_LIMITS;
-  if (direction == 's' && Axis2_LimitLock == -1) return CE_SLEW_ERR_OUTSIDE_LIMITS;
+  // 物理限位锁只在真实限位事件存续期间有效：危险方向禁止，反方向允许脱离。
+  if (physicalLimitLatched && direction == 'n' && Axis2_LimitLock == 1)  return CE_SLEW_ERR_OUTSIDE_LIMITS;
+  if (physicalLimitLatched && direction == 's' && Axis2_LimitLock == -1) return CE_SLEW_ERR_OUTSIDE_LIMITS;
 
-  escapingPhysicalLimitAxis2 = (generalError == ERR_LIMIT_SENSE) &&
+  escapingPhysicalLimitAxis2 = physicalLimitLatched &&
                                ((direction == 'n' && Axis2_LimitLock == -1) ||
                                 (direction == 's' && Axis2_LimitLock == 1));
 #endif
 
-  if (direction == 'n' && !guideNorthOk()) return CE_SLEW_ERR_OUTSIDE_LIMITS;
-  if (direction == 's' && !guideSouthOk()) return CE_SLEW_ERR_OUTSIDE_LIMITS;
+  // 脱离真实物理限位时，物理逃逸优先于基于可能失真的坐标软件限制。
+  if (!escapingPhysicalLimitAxis2 && direction == 'n' && !guideNorthOk()) return CE_SLEW_ERR_OUTSIDE_LIMITS;
+  if (!escapingPhysicalLimitAxis2 && direction == 's' && !guideSouthOk()) return CE_SLEW_ERR_OUTSIDE_LIMITS;
   if (!escapingPhysicalLimitAxis2 && guideRate < 3 && (generalError == ERR_ALT_MIN ||
                                                        generalError == ERR_LIMIT_SENSE ||
                                                        generalError == ERR_DEC ||
@@ -616,7 +618,12 @@ void ST4() {
         if (newDirAxis1 != 'b') {
 #if ST4_HAND_CONTROL == ON
           if (waitingHome) waitingHomeContinue=true; else
-          if (trackingState == TrackingMoveTo) { if (!abortGoto) abortGoto=StartAbortGoto; } else
+          if (trackingState == TrackingMoveTo) {
+            // ST4 手控接管当前 GOTO：记录为用户中止，避免 Motor Hold 的成功后自动跟踪误触发。
+            if (gotoAbortState == GOTO_ABORT_NONE) gotoAbortState=GOTO_ABORT_STOPPED;
+            gotoStartTrackingOnSuccess=false;
+            if (!abortGoto) abortGoto=StartAbortGoto;
+          } else
 #endif
             {
 #if SEPARATE_PULSE_GUIDE_RATE == ON && ST4_HAND_CONTROL != ON
@@ -639,7 +646,12 @@ void ST4() {
         if (newDirAxis2 != 'b') {
 #if ST4_HAND_CONTROL == ON
           if (waitingHome) waitingHomeContinue=true; else
-          if (trackingState == TrackingMoveTo) { if (!abortGoto) abortGoto=StartAbortGoto; } else
+          if (trackingState == TrackingMoveTo) {
+            // ST4 手控接管当前 GOTO：记录为用户中止，避免 Motor Hold 的成功后自动跟踪误触发。
+            if (gotoAbortState == GOTO_ABORT_NONE) gotoAbortState=GOTO_ABORT_STOPPED;
+            gotoStartTrackingOnSuccess=false;
+            if (!abortGoto) abortGoto=StartAbortGoto;
+          } else
 #endif
           {
 #if SEPARATE_PULSE_GUIDE_RATE == ON && ST4_HAND_CONTROL != ON
