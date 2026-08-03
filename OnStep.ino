@@ -45,7 +45,7 @@
 
 #include "Constants.h"
 
-// --- [修改开始] 新增限位锁死状态变量 ---
+// --- 新增限位锁死状态变量 ---
 // 0=无锁死, 1=正向锁死(如East/North), -1=反向锁死(如West/South)
 int Axis1_LimitLock = 0;
 int Axis2_LimitLock = 0;
@@ -541,16 +541,16 @@ void loop2() {
   // =========================================================
 #endif
 
-  // 导星 (GUIDING) -------------------------------------------------------------------------------------------
+  // 导星 (GUIDING)
   ST4();
   if ((trackingState != TrackingMoveTo) && (parkStatus == NotParked)) guide();
 
 #if HOME_SENSE != OFF
-  // 自动回原点 (AUTOMATIC HOMING) ----------------------------------------------------------------------------------
+  // 自动回原点 (AUTOMATIC HOMING)
   checkHome();
 #endif
 
-  // 1/100 秒定时任务 --------------------------------------------------------------------------------
+  // 1/100 秒定时任务
   cli(); long lstNow=lst; sei();
   if (lstNow != siderealTimer) {
     siderealTimer=lstNow;

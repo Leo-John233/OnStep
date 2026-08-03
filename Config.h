@@ -104,8 +104,8 @@
                                           //         能提高跟踪精度，特别是对于使用陶瓷晶振的 Mega2560 主板
 
 // ST4 导星接口(ST4 INTERFACE) --------------------------------------------- see https://onstep.groups.io/g/main/wiki/Configuration-Controller#ST4
-// *** It is up to you to verify the interface meets the electrical specifications of any connected device, use at your own risk ***
-// ***由您验证接口是否符合任何连接设备的电气规格，使用风险由您自行承担
+// It is up to you to verify the interface meets the electrical specifications of any connected device, use at your own risk 
+// 由您验证接口是否符合任何连接设备的电气规格，使用风险由您自行承担
 #define ST4_INTERFACE                 ON  //    OFF, ON, ON_PULLUP enables interface. <= 1X guides unless hand control mode.  Option
                                           //    OFF, ON, ON_PULLUP 启用接口。<= 1X 倍速导星（除非在手柄模式）
                                           //         During goto btn press: aborts slew or continue meridian flip pause home
