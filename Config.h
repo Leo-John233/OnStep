@@ -77,14 +77,14 @@
                                           //   HIGH, 从上面看，当轴位于原点顺时针方向时的电平状态。用LOW反转
                                           //   Signal state reverses when travel moves ccw past the home position.
                                           //   当转动越过原点逆时针方向时，信号状态会反转       
-// 一，二阶段回零速度配置
-#define HOME_FAST_RATE                  9 //  1..9，第一阶段快速搜索速度；8=半最大速度，9=最大速度
-#define HOME_SLOW_RATE                  7 //  1..9，第二阶段精确搜索速度；推荐7=48倍恒星速度
+// 自动回零速度设置
+#define HOME_FAST_RATE                  9 //  1..9；8=半最大速度，9=最大速度
+#define HOME_SLOW_RATE                  7 //  1..9；推荐7=48倍恒星速度
 // 偏置零位配置                            
 #define HOME_OFFSET_AXIS1            -1.5 //  n.n (度), 赤经/方位轴的偏置角度（支持正负号改变方向，0为不偏置）
 #define HOME_OFFSET_AXIS2               1 //  n.n (度), 赤纬/俯仰轴的偏置角度（支持正负号改变方向，0为不偏置）
-#define HOME_OFFSET_RATE                8 //  7, n. 偏置阶段使用的速度档位                             <- 新增
-                                          //  可选值通常为 1..9 档。
+#define HOME_OFFSET_RATE                8 //  7, n. 偏置阶段使用的速度档位
+                                          //  可选值通常为 1..9 档
                                           //  提示：7 = 48x 恒星速（推荐，精找速度），8 = 半最大速，9 = 全速（Goto速度）
 
 #define LIMIT_SENSE             ON_PULLUP //    OFF, ON*, ON_PULLUP、ON_PULLUND limit sense switch close to Gnd stops gotos and/or tracking.         Option
