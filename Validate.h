@@ -894,6 +894,20 @@
   #error "Configuration (Config.h): Setting HOME_OFFSET_RATE invalid, use a guide-rate index from 1 through 9."
 #endif
 
+#ifndef HOME_FAST_RATE
+  #error "Configuration (Config.h): Setting HOME_FAST_RATE must be present!"
+#elif HOME_FAST_RATE < 1 || HOME_FAST_RATE > 9
+  #error "Configuration (Config.h): Setting HOME_FAST_RATE invalid, use a guide-rate index from 1 through 9."
+#endif
+
+#ifndef HOME_SLOW_RATE
+  #error "Configuration (Config.h): Setting HOME_SLOW_RATE must be present!"
+#elif HOME_SLOW_RATE < 1 || HOME_SLOW_RATE > 9
+  #error "Configuration (Config.h): Setting HOME_SLOW_RATE invalid, use a guide-rate index from 1 through 9."
+#elif HOME_FAST_RATE < HOME_SLOW_RATE
+  #error "Configuration (Config.h): HOME_FAST_RATE must be greater than or equal to HOME_SLOW_RATE."
+#endif
+
 #ifndef HOME_OFFSET_AXIS1
   #error "Configuration (Config.h): Setting HOME_OFFSET_AXIS1 must be present!"
 #endif

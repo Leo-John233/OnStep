@@ -225,20 +225,23 @@ CommandErrors goHome(bool fast) {
     enableStepperDrivers();
 
     findHomeMode=FH_FAST;
-    double secPerDeg=3600.0/(double)guideRates[8];
-    findHomeTimeout=millis()+(unsigned long)(secPerDeg*180.0*1000.0);
+    // 默认9档时与原版超时一致；改变速度后仍保持约360度的搜索余量。
+    double secPerDeg=3600.0/(double)guideRates[HOME_FAST_RATE];
+    findHomeTimeout=millis()+(unsigned long)(secPerDeg*360.0*1000.0);
     
     // 8=HalfMaxRate半速，9＝全速
-    if (AXIS2_TANGENT_ARM == OFF) e=startGuideAxis1(a1,9,0,false);
-    if (e == CE_NONE) e=startGuideAxis2(a2,9,0,false,true);
+    if (AXIS2_TANGENT_ARM == OFF) e=startGuideAxis1(a1,HOME_FAST_RATE,0,false);
+    if (e == CE_NONE) e=startGuideAxis2(a2,HOME_FAST_RATE,0,false,true);
     if (e == CE_NONE) VLF("MSG: Homing started phase 1"); else VLF("MSG: Homing start phase 1 failed");
   } else {
     findHomeMode=FH_SLOW;
-    findHomeTimeout=millis()+30000UL;
+    // 默认7档时为原来的30秒；改变速度后仍保持约6度的精找范围。
+    double secPerDeg=3600.0/(double)guideRates[HOME_SLOW_RATE];
+    findHomeTimeout=millis()+(unsigned long)(secPerDeg*6.0*1000.0);
     
     // 7=48x sidereal，8=HalfMaxRate半速
-    if (AXIS2_TANGENT_ARM == OFF) e=startGuideAxis1(a1,7,0,false);
-    if (e == CE_NONE) e=startGuideAxis2(a2,7,0,false,true);
+    if (AXIS2_TANGENT_ARM == OFF) e=startGuideAxis1(a1,HOME_SLOW_RATE,0,false);
+    if (e == CE_NONE) e=startGuideAxis2(a2,HOME_SLOW_RATE,0,false,true);
     if (e == CE_NONE) VLF("MSG: Homing started phase 2"); else VLF("MSG: Homing start phase 2 failed");
   }
   if (e != CE_NONE) {
