@@ -1,7 +1,3 @@
-# Custom build: OnStep 4.24u
-
-This archive contains the project-specific decoupled safety, three-stage Home, shared Limit IO, and ZWO `:hC#` recovery implementation. See [REVIEW_2026-08-03_zh-CN.md](./REVIEW_2026-08-03_zh-CN.md) for the exact behavior, supported sensor combinations, and verification limits.
-
 OnStep Telescope Controller
 ===========================
 # Important Note

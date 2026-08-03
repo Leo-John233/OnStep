@@ -1329,7 +1329,6 @@ void processCommands() {
       //            Returns: Nothing
       if ((command[1] == 'e' || command[1] == 'w') && parameter[0] == 0) {
 
-        // 手动运动的全部状态/限位判断统一由 Guide.ino 处理，避免重复检查和静默卡死。
         commandError=startGuideAxis1(command[1],currentGuideRate,GUIDE_TIME_LIMIT*1000,false);
         boolReply=false;
 
@@ -1339,7 +1338,6 @@ void processCommands() {
       //            Returns: Nothing
       if ((command[1] == 'n' || command[1] == 's') && parameter[0] == 0) {
 
-        // 手动运动的全部状态/限位判断统一由 Guide.ino 处理，避免重复检查和静默卡死。
         commandError=startGuideAxis2(command[1],currentGuideRate,GUIDE_TIME_LIMIT*1000,false);
         boolReply=false;
 

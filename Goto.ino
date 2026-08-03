@@ -10,8 +10,7 @@ CommandErrors validateGoto() {
   if (trackingState == TrackingMoveTo)         return CE_GOTO_ERR_GOTO;
   if (guideDirAxis1 || guideDirAxis2)          return CE_MOUNT_IN_MOTION;
   if (faultAxis1 || faultAxis2)                return CE_SLEW_ERR_HARDWARE_FAULT;
-  // 扩展恢复状态只负责入口授权：READY 之外不启动普通 GOTO/Sync。
-  // HOME_RETURN_ONLY 仍保留坐标，但只允许 Home；UNKNOWN 必须重建位置参考。
+  // 位置参考不可信或处于恢复锁时，禁止普通 GOTO/Sync。
   if (!positionReady())                         return CE_SLEW_ERR_IN_STANDBY;
   return CE_NONE;
 }
@@ -251,12 +250,7 @@ CommandErrors goToEqu(double RA, double Dec) {
     trackingState=TrackingSidereal; enableStepperDrivers(); e=validateGoto();
   }
 #ifndef CE_GOTO_ERR_GOTO_OFF
-  if (e == CE_GOTO_ERR_GOTO) {
-    // 新目标请求中止当前 GOTO 时，不得把当前运动误判为正常到达。
-    if (gotoAbortState == GOTO_ABORT_NONE) gotoAbortState=GOTO_ABORT_STOPPED;
-    gotoStartTrackingOnSuccess=false;
-    if (!abortGoto) abortGoto=StartAbortGoto;
-  }
+  if (e == CE_GOTO_ERR_GOTO) { if (!abortGoto) abortGoto=StartAbortGoto; }
 #endif
   if (e != CE_NONE) return e;
   e=validateGotoCoords(HA,Dec,a);
@@ -313,11 +307,10 @@ CommandErrors goToEqu(double RA, double Dec) {
 
   const bool requestTrackingAfterSuccess =
     trackingState == TrackingNone && timeWasSet && dateWasSet &&
-    positionReady() &&
-    parkStatus == NotParked && !isHoming();
+    positionReady() && parkStatus == NotParked && !isHoming();
 
-  CommandErrors result = goTo(Axis1,Axis2,Axis1Alt,Axis2Alt,thisPierSide);
-  if (result == CE_NONE) gotoStartTrackingOnSuccess = requestTrackingAfterSuccess;
+  CommandErrors result=goTo(Axis1,Axis2,Axis1Alt,Axis2Alt,thisPierSide);
+  if (result == CE_NONE) gotoStartTrackingOnSuccess=requestTrackingAfterSuccess;
   return result;
 }
 
@@ -396,7 +389,7 @@ CommandErrors goTo(double thisTargetAxis1, double thisTargetAxis2, double altTar
     if (toInstrAxis2(thisTargetAxis2,p) > axis2Settings.max) return CE_SLEW_ERR_OUTSIDE_LIMITS;
   #endif
 #endif
-  // 每个低层 GOTO 从干净的扩展状态开始；跟踪状态本身完全沿用原版。
+  // 底层 GOTO 同时供 Home/Park 使用，不能自行决定开始跟踪。
   gotoStartTrackingOnSuccess=false;
   gotoAbortState=GOTO_ABORT_NONE;
   lastTrackingState=trackingState;

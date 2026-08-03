@@ -126,6 +126,7 @@ void checkHome() {
 
     // 真实回原点完成后，所有结构类型都重新建立可信坐标基准。
     completePositionRecovery();
+    safetyLimitsOn = true;
     abortGoto = 0;
     lastTrackingState = TrackingNone;
     abortTrackingState = TrackingNone;
@@ -149,13 +150,13 @@ void StopAxis2() {
     if (findHomeMode == FH_FAST) findHomeMode = FH_IDLE;
   }
 }
+
 #endif
 
 // moves telescope to the home position, then stops tracking
 // 将望远镜移回初始位置，然后停止跟踪
 CommandErrors goHome(bool fast) {
-  // 开机/硬安全恢复要求 Home 时，合法的恢复流程优先于保存的 Parked 标记。
-  // 无传感器仅 HOME_RETURN_ONLY 可覆盖 Parked；有传感器时非 READY 状态均可重新搜索 Home。
+  // 恢复性 Home 可覆盖残留的 Parked 标记。
 #if HOME_SENSE == OFF
   const bool homeMayOverridePark = positionHomeReturnOnly();
 #else
@@ -169,31 +170,20 @@ CommandErrors goHome(bool fast) {
   CommandErrors e=validateGoto();
 
 #if HOME_SENSE == OFF
-  // 无 Home 传感器时，开机回零锁或物理限位恢复可使用保留坐标执行 :hC#。
-  // 仅 HOME_RETURN_ONLY/READY 可使用坐标 Home；Park、正在运动、导星、驱动故障和 UNKNOWN 均不可绕过。
+  // 无 Home 传感器时，保留的可信坐标只能用于返回 Home。
   const bool coordinateHomeSafe =
-    parkStatus == NotParked &&
-    !trackingSyncInProgress() &&
-    trackingState != TrackingMoveTo &&
-    guideDirAxis1 == 0 && guideDirAxis2 == 0 &&
+    parkStatus == NotParked && !trackingSyncInProgress() &&
+    trackingState != TrackingMoveTo && guideDirAxis1 == 0 && guideDirAxis2 == 0 &&
     !faultAxis1 && !faultAxis2;
-
-  const bool coordinateRecovery =
-    coordinateHomeSafe && positionHomeReturnOnly();
-
-  const bool normalCoordinateHome =
-    coordinateHomeSafe && positionReady();
-
-  if (e == CE_SLEW_ERR_IN_STANDBY && (coordinateRecovery || normalCoordinateHome)) {
+  if (e == CE_SLEW_ERR_IN_STANDBY && coordinateHomeSafe && positionHomeReturnOnly()) {
     enableStepperDrivers();
-    e = CE_NONE;
-    if (coordinateRecovery) VLF("MSG: :hC# accepted as coordinate Home recovery");
+    e=CE_NONE;
   }
 #endif
   
 #if HOME_SENSE != OFF
   if (e != CE_NONE && e != CE_SLEW_ERR_IN_STANDBY) return e;
-  // 自动回零是恢复 standby、HOME_RETURN_ONLY 或 UNKNOWN 状态的合法通道。
+  // 自动回零是恢复 standby/位置不可信状态的合法通道。
   if (e == CE_SLEW_ERR_IN_STANDBY) e = CE_NONE;
 
   if (findHomeMode != FH_OFF) return CE_MOUNT_IN_MOTION;
@@ -260,11 +250,7 @@ CommandErrors goHome(bool fast) {
 #else
   if (e != CE_NONE) return e;
 
-  const bool recoveryInProgress = positionHomeReturnOnly();
-  if (recoveryInProgress) {
-    // 受限返航期间暂时绕过软件坐标限制；物理限位检测仍保留既定的回零最高权限旁路。
-    safetyLimitsOn = false;
-  }
+  if (positionHomeReturnOnly()) safetyLimitsOn=false;
 
   abortTrackingState=trackingState;
 

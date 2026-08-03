@@ -864,6 +864,12 @@
   #error "Configuration (Config.h): Setting GUIDE_DISABLE_BACKLASH invalid, use OFF or ON only."
 #endif
 
+#ifndef TRACK_AUTOSTART
+  #error "Configuration (Config.h): Setting TRACK_AUTOSTART must be present!"
+#elif TRACK_AUTOSTART != OFF && TRACK_AUTOSTART != ON
+  #error "Configuration (Config.h): Setting TRACK_AUTOSTART invalid, use OFF or ON only."
+#endif
+
 #ifndef HOME_REQUIRED_ON_BOOT
   #error "Configuration (Config.h): Setting HOME_REQUIRED_ON_BOOT must be present!"
 #elif HOME_REQUIRED_ON_BOOT != OFF && HOME_REQUIRED_ON_BOOT != ON
@@ -876,10 +882,24 @@
   #error "Configuration (Config.h): Setting HOME_REQUIRED_AFTER_LIMIT invalid, use OFF or ON only."
 #endif
 
-#ifndef TRACK_AUTOSTART
-  #error "Configuration (Config.h): Setting TRACK_AUTOSTART must be present!"
-#elif TRACK_AUTOSTART != OFF && TRACK_AUTOSTART != ON
-  #error "Configuration (Config.h): Setting TRACK_AUTOSTART invalid, use OFF or ON only."
+#ifndef MOTOR_HOLD_ON_BOOT
+  #error "Configuration (Config.h): Setting MOTOR_HOLD_ON_BOOT must be present!"
+#elif MOTOR_HOLD_ON_BOOT != OFF && MOTOR_HOLD_ON_BOOT != ON
+  #error "Configuration (Config.h): Setting MOTOR_HOLD_ON_BOOT invalid, use OFF or ON only."
+#endif
+
+#ifndef HOME_OFFSET_RATE
+  #error "Configuration (Config.h): Setting HOME_OFFSET_RATE must be present!"
+#elif HOME_OFFSET_RATE < 1 || HOME_OFFSET_RATE > 9
+  #error "Configuration (Config.h): Setting HOME_OFFSET_RATE invalid, use a guide-rate index from 1 through 9."
+#endif
+
+#ifndef HOME_OFFSET_AXIS1
+  #error "Configuration (Config.h): Setting HOME_OFFSET_AXIS1 must be present!"
+#endif
+
+#ifndef HOME_OFFSET_AXIS2
+  #error "Configuration (Config.h): Setting HOME_OFFSET_AXIS2 must be present!"
 #endif
 
 #ifndef TRACK_REFRACTION_RATE_DEFAULT

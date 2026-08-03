@@ -259,88 +259,62 @@ void moveTo() {
         sei();
   
         if (homeMount) {
-          const GotoAbortState completedHomeState = gotoAbortState;
-
-          // :hC# 只有真实到达 Home 才能解锁。用户取消、软件停止、物理限位或
-          // 驱动故障均保留原位置参考状态，避免“命令已启动即视为回零成功”。
+          const GotoAbortState completedHomeState=gotoAbortState;
           if (completedHomeState != GOTO_ABORT_NONE) {
+            // 坐标 Home 被中断时不得解除正常运动锁。
             homeMount=false;
             trackingSyncSeconds=0;
             trackingState=TrackingNone;
             lastTrackingState=TrackingNone;
-            gotoStartTrackingOnSuccess=false;
             gotoAbortState=GOTO_ABORT_NONE;
-
+            gotoStartTrackingOnSuccess=false;
             SiderealClockSetInterval(siderealInterval);
             setDeltaTrackingRate();
             VLF("MSG: Homing stopped; recovery state retained");
           } else {
-            // clear the backlash
             if (parkClearBacklash() == -1) return;  // working, no error flagging
-
-            // sound goto done
             soundAlert();
-
-            // restore trackingState
             trackingState=lastTrackingState; lastTrackingState=TrackingNone;
             SiderealClockSetInterval(siderealInterval);
-
-            // at the polar home position
             homeMount=false;
             if (AXIS2_TANGENT_ARM == OFF) atHome=true;
-
-            // 仅成功到达 Home 才重新建立位置参考并解除恢复锁。
             completePositionRecovery();
-
+            safetyLimitsOn=true;
             VLF("MSG: Homing done");
           }
         } else {
-          const GotoAbortState completedGotoState = gotoAbortState;
+          const GotoAbortState completedGotoState=gotoAbortState;
+          const bool startTracking=gotoStartTrackingOnSuccess;
+          trackingSyncSeconds=0;
 
-          if (completedGotoState == GOTO_ABORT_RECOVERY_REQUIRED ||
-              !positionReady()) {
-            // 只有真实硬故障或配置要求的物理限位进入恢复锁；三态位置参考决定可用恢复方式。
-            trackingSyncSeconds=0;
+          if (completedGotoState == GOTO_ABORT_POSITION_LOST || !positionReady()) {
             trackingState=TrackingNone;
             lastTrackingState=TrackingNone;
-            gotoStartTrackingOnSuccess=false;
-
             SiderealClockSetInterval(siderealInterval);
             setDeltaTrackingRate();
             if (generalError == ERR_NONE) generalError=ERR_LIMIT_SENSE;
-            VLF("MSG: Goto failed by hard safety abort; position recovery required");
+            VLF("MSG: Goto stopped; Home/Set Home required");
           } else if (completedGotoState == GOTO_ABORT_HARD_STOP) {
-            // 物理限位急停但不要求重新 Home：保留坐标，明确停止跟踪。
-            trackingSyncSeconds=0;
             trackingState=TrackingNone;
             lastTrackingState=TrackingNone;
-            gotoStartTrackingOnSuccess=false;
-
             SiderealClockSetInterval(siderealInterval);
             setDeltaTrackingRate();
             VLF("MSG: Goto stopped by physical limit");
           } else {
-            // 正常完成和普通软件/用户中止均恢复原版真实跟踪状态。
             trackingState=lastTrackingState;
             lastTrackingState=TrackingNone;
-
-            // Motor Hold 的自动跟踪仅在普通天体 GOTO 正常到达后生效。
-            if (completedGotoState == GOTO_ABORT_NONE && gotoStartTrackingOnSuccess) {
-              trackingState=TrackingSidereal;
-            }
-
+            if (completedGotoState == GOTO_ABORT_NONE && startTracking) trackingState=TrackingSidereal;
             SiderealClockSetInterval(siderealInterval);
             setDeltaTrackingRate();
             if (completedGotoState == GOTO_ABORT_NONE) VLF("MSG: Goto done");
             else VLF("MSG: Goto stopped");
 
-            // allow 5 seconds for synchronization of coordinates after goto ends
-            if (trackingState == TrackingSidereal) {
+            // 仅未被安全状态分类的完成路径进入原版 GOTO 后同步窗口。
+            if (completedGotoState == GOTO_ABORT_NONE && trackingState == TrackingSidereal) {
               trackingSyncSeconds=5;
               VLF("MSG: Tracking sync started");
             }
           }
-
           gotoAbortState=GOTO_ABORT_NONE;
           gotoStartTrackingOnSuccess=false;
         }

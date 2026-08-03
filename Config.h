@@ -68,7 +68,7 @@
 #define TELESCOPE_TEMPERATURE         OFF //    OFF, DS1820, n. Where n is the DS1820 s/n for focuser temperature.            Adjust
                                           //    OFF, DS1820, n. n是DS1820的序列号，用于检测调焦器处的温度（做温补）
 
-#define HOME_SENSE              ON_PULLUP //    OFF, ON*, ON_PULLUP、ON_PULLDOWN Automatically detect and use home switches. For GEM mode only.      Option
+#define HOME_SENSE              ON_PULLUP //    OFF, ON*, ON_PULLUP、ON_PULLUND Automatically detect and use home switches. For GEM mode only.      Option
                                                // OFF is supported: after a hard position-loss fault, manually return to Home and use Set Home.
                                           //    OFF, ON*. 自动检测并使用原点开关（霍尔/光电等）, 仅限 GEM (德式) 模式
 #define HOME_SENSE_STATE_AXIS1        LOW //   HIGH, State when clockwise of home position, as seen from front. Rev. w/LOW.   Adjust
@@ -84,7 +84,7 @@
                                           //  可选值通常为 1..9 档。
                                           //  提示：7 = 48x 恒星速（推荐，精找速度），8 = 半最大速，9 = 全速（Goto速度）
 
-#define LIMIT_SENSE             ON_PULLUP //    OFF, ON*, ON_PULLUP、ON_PULLDOWN limit sense switch close to Gnd stops gotos and/or tracking.         Option
+#define LIMIT_SENSE             ON_PULLUP //    OFF, ON*, ON_PULLUP、ON_PULLUND limit sense switch close to Gnd stops gotos and/or tracking.         Option
                                                // OFF is supported, but removes physical switch protection; software limits remain active.
                                           //    OFF, ON* 限位开关。闭合接地时停止GOTO或跟踪
 #define LIMIT_SENSE_STATE             LOW //    LOW, For NO (normally open) switches, HIGH for NC (normally closed.)          Adjust
@@ -104,8 +104,8 @@
                                           //         能提高跟踪精度，特别是对于使用陶瓷晶振的 Mega2560 主板
 
 // ST4 导星接口(ST4 INTERFACE) --------------------------------------------- see https://onstep.groups.io/g/main/wiki/Configuration-Controller#ST4
-// It is up to you to verify the interface meets the electrical specifications of any connected device, use at your own risk 
-// 由您验证接口是否符合任何连接设备的电气规格，使用风险由您自行承担
+// *** It is up to you to verify the interface meets the electrical specifications of any connected device, use at your own risk ***
+// ***由您验证接口是否符合任何连接设备的电气规格，使用风险由您自行承担
 #define ST4_INTERFACE                 ON  //    OFF, ON, ON_PULLUP enables interface. <= 1X guides unless hand control mode.  Option
                                           //    OFF, ON, ON_PULLUP 启用接口。<= 1X 倍速导星（除非在手柄模式）
                                           //         During goto btn press: aborts slew or continue meridian flip pause home
@@ -168,14 +168,13 @@
 // 运动控制(MOTION CONTROL) ---------------------------------------------- see https://onstep.groups.io/g/main/wiki/Configuration-Mount#MOTION
 #define STEP_WAVE_FORM             SQUARE // SQUARE, PULSE Step signal wave form faster rates. SQUARE best signal integrity.  Adjust
                                           // SQUARE, PULSE 高速时的脉冲波形。SQUARE (方波) 信号最稳
-// 回零保护与开机电机保持
-#define HOME_REQUIRED_ON_BOOT          ON // ON: 开机后必须先 Home/Set Home，才允许 GOTO/Tracking
-                                          //      HOME_SENSE=OFF 时 :hC# 确认开机当前位置为 Home；有传感器时执行三阶段回零
-                                          // OFF: 保持原版行为，开机当前位置直接作为 Home
-#define HOME_REQUIRED_AFTER_LIMIT      ON // ON: 物理限位触发后必须 Home/Set Home，才允许 GOTO/Tracking
-                                          //      HOME_SENSE=OFF 时保留步数坐标并允许 :hC# 受限返航；有传感器时重新搜索 Home
-                                          // OFF: 限位仍急停并保留方向锁，稳定脱离后无需强制回零
-#define MOTOR_HOLD_ON_BOOT             ON // ON: 开机使能驱动器；不会自行建立 Home，也不会覆盖 TRACK_AUTOSTART
+// 回零策略与电机保持
+#define HOME_REQUIRED_ON_BOOT          ON // ON：开机后须先 Home/Set Home 才能正常 GOTO/跟踪；
+                                          // OFF：沿用原版启动位置假定
+#define HOME_REQUIRED_AFTER_LIMIT      ON // ON：物理限位后须 Home/Set Home 恢复；
+                                          // OFF：限位仍停止运动，但不强制重新回零
+#define MOTOR_HOLD_ON_BOOT             ON // ON：开机仅使能电机保持；
+                                          // OFF：不额外使能电机（不改变上述回零策略）
 
 // 步进驱动器型号说明 (也可以看 ~/OnStep/src/sd_drivers/Models.h 获取更多型号): 
 // A4988, DRV8825, LV8729, S109, SSS TMC2209*, TMC2130* **, 和 TMC5160* ***

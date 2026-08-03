@@ -7,7 +7,7 @@ CommandErrors setPark() {
   if (parkStatus == Parked)             return CE_PARKED;
   if (isSlewing())                      return CE_MOUNT_IN_MOTION;
   if (faultAxis1 || faultAxis2)         return CE_SLEW_ERR_HARDWARE_FAULT;
-  if (!positionReady())                      return CE_SLEW_ERR_IN_STANDBY;
+  if (!positionReady())                  return CE_SLEW_ERR_IN_STANDBY;
 
   VLF("MSG: Setting park position");
 
