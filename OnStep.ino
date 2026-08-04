@@ -38,14 +38,14 @@
 #define FirmwareDate          __DATE__
 #define FirmwareVersionMajor  4
 #define FirmwareVersionMinor  24      // 次版本号 0 到 99
-#define FirmwareVersionPatch  "v8"     // 补丁版本，例如主.次 补丁: 1.3c
+#define FirmwareVersionPatch  "s"     // 补丁版本，例如主.次 补丁: 1.3c
 #define FirmwareVersionConfig 3       // 内部使用，用于跟踪配置文件更改
 #define FirmwareName          "On-Step"
 #define FirmwareTime          __TIME__
 
 #include "Constants.h"
 
-// --- [修改开始] 新增限位锁死状态变量 ---
+// --- 新增限位锁死状态变量 ---
 // 0=无锁死, 1=正向锁死(如East/North), -1=反向锁死(如West/South)
 int Axis1_LimitLock = 0;
 int Axis2_LimitLock = 0;
