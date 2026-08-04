@@ -250,7 +250,11 @@ CommandErrors goToEqu(double RA, double Dec) {
     trackingState=TrackingSidereal; enableStepperDrivers(); e=validateGoto();
   }
 #ifndef CE_GOTO_ERR_GOTO_OFF
-  if (e == CE_GOTO_ERR_GOTO) { if (!abortGoto) abortGoto=StartAbortGoto; }
+  if (e == CE_GOTO_ERR_GOTO) {
+    // 新目标只中止当前 Goto；结束后恢复当前 Goto 开始前的跟踪状态。
+    gotoStartTrackingOnSuccess=false;
+    if (!abortGoto) abortGoto=StartAbortGoto;
+  }
 #endif
   if (e != CE_NONE) return e;
   e=validateGotoCoords(HA,Dec,a);

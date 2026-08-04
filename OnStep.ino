@@ -924,10 +924,13 @@ void stopSlewingAndTracking(StopSlewActions ss) {
 
   if (trackingState == TrackingMoveTo) {
 
+    // 任何中止都不能继续使用“正常到达后自动跟踪”的一次性请求；
+    // lastTrackingState 和原版 Abort/5 秒同步流程保持不变。
+    gotoStartTrackingOnSuccess=false;
+
     // 软件轴范围、中天和高度限制属于可恢复中止；硬故障状态优先级更高，
     // 不能被后续的软件停止原因覆盖。
     if (ss != SS_ALL_FAST && gotoAbortState == GOTO_ABORT_NONE) gotoAbortState=GOTO_ABORT_STOPPED;
-    if (ss != SS_ALL_FAST) gotoStartTrackingOnSuccess=false;
 
     if (!abortGoto) {
       abortGoto = StartAbortGoto;

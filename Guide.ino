@@ -614,7 +614,11 @@ void ST4() {
         if (newDirAxis1 != 'b') {
 #if ST4_HAND_CONTROL == ON
           if (waitingHome) waitingHomeContinue=true; else
-          if (trackingState == TrackingMoveTo) { if (!abortGoto) abortGoto=StartAbortGoto; } else
+          if (trackingState == TrackingMoveTo) {
+            // ST4 中止 Goto 后只恢复 Goto 前的跟踪状态。
+            gotoStartTrackingOnSuccess=false;
+            if (!abortGoto) abortGoto=StartAbortGoto;
+          } else
 #endif
             {
 #if SEPARATE_PULSE_GUIDE_RATE == ON && ST4_HAND_CONTROL != ON
@@ -637,7 +641,11 @@ void ST4() {
         if (newDirAxis2 != 'b') {
 #if ST4_HAND_CONTROL == ON
           if (waitingHome) waitingHomeContinue=true; else
-          if (trackingState == TrackingMoveTo) { if (!abortGoto) abortGoto=StartAbortGoto; } else
+          if (trackingState == TrackingMoveTo) {
+            // ST4 中止 Goto 后只恢复 Goto 前的跟踪状态。
+            gotoStartTrackingOnSuccess=false;
+            if (!abortGoto) abortGoto=StartAbortGoto;
+          } else
 #endif
           {
 #if SEPARATE_PULSE_GUIDE_RATE == ON && ST4_HAND_CONTROL != ON
