@@ -201,9 +201,9 @@
 #define AXIS1_DRIVER_REVERSE          OFF //    OFF, ON 反转运动方向。或者你也可以把电机线反着接.                   <-Often
 #define AXIS1_DRIVER_STATUS       TMC_SPI //    OFF, TMC_SPI, HIGH, LOW.  轮询驱动器状态/故障.                     Option
 
-#define AXIS1_LIMIT_MIN              -110 //  -180, n. n= -90..-270 (度). 赤道仪模式下的最小“时角”.                             Adjust
+#define AXIS1_LIMIT_MIN              -180 //  -180, n. n= -90..-270 (度). 赤道仪模式下的最小“时角”.                             Adjust
                                           //        n. n=-180..-360 (度). 经纬仪模式下的最小方位角.
-#define AXIS1_LIMIT_MAX               110 //   180, n. n=  90.. 270 (度). 赤道仪模式下的最大“时角”.                             Adjust
+#define AXIS1_LIMIT_MAX               180 //   180, n. n=  90.. 270 (度). 赤道仪模式下的最大“时角”.                             Adjust
                                           //        n. n= 180.. 360 (度). 经纬仪模式下的最大方位角.
 
 // 轴 2：赤纬 / 俯仰(AXIS2 DEC/AL)T
