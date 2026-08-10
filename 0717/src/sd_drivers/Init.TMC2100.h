@@ -1,6 +1,0 @@
-// TMC2100 stepper driver init
-
-#if AXIS1_DRIVER_MODEL == TMC2100 || AXIS2_DRIVER_MODEL == TMC2100
-  #define MODE_SWITCH_BEFORE_SLEW ON
-  #define MODE_SWITCH_SLEEP ON
-#endif
