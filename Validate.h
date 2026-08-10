@@ -1185,6 +1185,24 @@
     #define AXIS2_DRIVER_MICROSTEPS_GOTO AXIS2_DRIVER_MICROSTEPS
   #endif
 
+  // MaxESP3 uses the same M0/M1 signals for both standalone drivers. A
+  // per-axis microstep change would therefore change the other motor without
+  // updating its software step size. Keep dual TMC2209 builds in one fixed
+  // microstep mode; SPI drivers have independent chip-selects and are exempt.
+  #if defined(AXIS1_AXIS2_SHARED_MODE_PINS) && \
+      AXIS1_DRIVER_MODEL == TMC2209 && AXIS2_DRIVER_MODEL == TMC2209
+    #if AXIS1_DRIVER_MICROSTEPS != AXIS2_DRIVER_MICROSTEPS
+      #error "Configuration (Config.h): AXIS1/2 TMC2209 microsteps must match because this PINMAP shares their M0/M1 pins."
+    #endif
+    #if AXIS1_DRIVER_MICROSTEPS_GOTO != OFF || AXIS2_DRIVER_MICROSTEPS_GOTO != OFF
+      #warning "MaxESP3 dual TMC2209 shares M0/M1; dynamic Goto microstep switching is disabled and tracking microsteps are used for Goto."
+      #undef AXIS1_DRIVER_MICROSTEPS_GOTO
+      #define AXIS1_DRIVER_MICROSTEPS_GOTO OFF
+      #undef AXIS2_DRIVER_MICROSTEPS_GOTO
+      #define AXIS2_DRIVER_MICROSTEPS_GOTO OFF
+    #endif
+  #endif
+
 #else
   #warning "Configuration (Config.h): Stepper drivers for Axis1 and Axis2 are not defined.  Be sure to properly configure micro-step mode, Vref/current, etc. manually with shunts, dip-switches, as required."
 #endif

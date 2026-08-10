@@ -553,7 +553,10 @@ void loop2() {
     // 确保 GOTO 过程中目标位置依然随时间更新
     if (trackingState == TrackingMoveTo) {
       moveTo();
-      if (lastTrackingState == TrackingSidereal) {
+      // A normal sky Goto started from Motor Hold still has to follow the
+      // sidereal target while it is moving.  Keep lastTrackingState unchanged
+      // so an aborted Goto restores the real pre-Goto state (TrackingNone).
+      if (lastTrackingState == TrackingSidereal || gotoStartTrackingOnSuccess) {
         origTargetAxis1.fixed+=fstepAxis1.fixed;
         origTargetAxis2.fixed+=fstepAxis2.fixed;
         // 中天翻转分阶段交接期间不推进无效的中间目标
