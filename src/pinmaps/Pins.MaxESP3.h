@@ -47,9 +47,6 @@
                                     // PPS时间源输入，例如GPS                                            
 #define LimitPin           Aux7     // The limit switch sense is a logic level input normally pull high (2k resistor,) shorted to ground it stops gotos/tracking
                                     // 限位开关感测是一个逻辑电平输入，通常拉高（2k电阻器），对地短路，它会停止gotos/跟踪
-// Axis1/2 share M0/M1 when they are used as standalone mode pins.
-#define AXIS1_AXIS2_SHARED_MODE_PINS
-
 // Axis1 RA/Azm step/dir driver
 // 轴1 RA/步进/细分 驱动
 #define Axis1_EN              4     // Enable(使能引脚)
