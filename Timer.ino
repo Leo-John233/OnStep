@@ -216,11 +216,21 @@ void timerSupervisor(bool isCentiSecond) {
   if (inbacklashAxis2) thisTimerRateAxis2=timerRateBacklashAxis2;
 
   // trigger goto step mode
-#if defined(AXIS1_DRIVER_CODE) && defined(AXIS1_DRIVER_CODE_GOTO) && MODE_SWITCH_BEFORE_SLEW == OFF
-  gotoRateAxis1=(thisTimerRateAxis1 < AXIS1_DRIVER_SWITCH_RATE);
-#endif
-#if defined(AXIS2_DRIVER_CODE) && defined(AXIS2_DRIVER_CODE_GOTO) && MODE_SWITCH_BEFORE_SLEW == OFF
-  gotoRateAxis2=(thisTimerRateAxis2 < AXIS2_DRIVER_SWITCH_RATE);
+#if defined(AXIS12_TMC2209_MODE_SHARED) && defined(AXIS1_DRIVER_CODE_GOTO) && defined(AXIS2_DRIVER_CODE_GOTO)
+  // MaxESP3 shares the standalone driver's M0/M1 nets.  If either axis needs
+  // the coarse Goto mode, both hardware drivers and both software step scales
+  // must stay in that mode.  Otherwise the first axis to decelerate silently
+  // changes the other driver's microstep size while its position math does not.
+  gotoRateAxis1=(thisTimerRateAxis1 < AXIS1_DRIVER_SWITCH_RATE) ||
+                (thisTimerRateAxis2 < AXIS2_DRIVER_SWITCH_RATE);
+  gotoRateAxis2=gotoRateAxis1;
+#else
+  #if defined(AXIS1_DRIVER_CODE) && defined(AXIS1_DRIVER_CODE_GOTO) && MODE_SWITCH_BEFORE_SLEW == OFF
+    gotoRateAxis1=(thisTimerRateAxis1 < AXIS1_DRIVER_SWITCH_RATE);
+  #endif
+  #if defined(AXIS2_DRIVER_CODE) && defined(AXIS2_DRIVER_CODE_GOTO) && MODE_SWITCH_BEFORE_SLEW == OFF
+    gotoRateAxis2=(thisTimerRateAxis2 < AXIS2_DRIVER_SWITCH_RATE);
+  #endif
 #endif
 
   // set the rates
@@ -239,6 +249,37 @@ void timerSupervisor(bool isCentiSecond) {
     isrTimerRateAxis2=thisTimerRateAxis2;
   }
 }
+
+#if defined(AXIS12_TMC2209_MODE_SHARED) && defined(AXIS1_DRIVER_CODE_GOTO) && defined(AXIS2_DRIVER_CODE_GOTO)
+IRAM_ATTR void updateSharedTmc2209Mode() {
+  if (gotoModeAxis1 == gotoRateAxis1 && gotoModeAxis2 == gotoRateAxis1) return;
+
+  if (gotoRateAxis1) {
+    // An axis which is moving must first reach a coordinate representable in
+    // the coarser mode.  A stationary axis emits no pulse while the shared
+    // pins are coarse and can safely return to tracking mode with no offset.
+    bool axis1Ready = (!inbacklashAxis1 && posAxis1 == (long)targetAxis1.part.m) ||
+                      ((posAxis1+blAxis1)%axis1StepsGoto == 0);
+    bool axis2Ready = (!inbacklashAxis2 && posAxis2 == (long)targetAxis2.part.m) ||
+                      ((posAxis2+blAxis2)%axis2StepsGoto == 0);
+    if (!axis1Ready || !axis2Ready) return;
+
+    // Both motor ISRs use the same ESP32 critical section.  Clear both STEP
+    // outputs before changing the shared mode pins, then publish both scales.
+    a1CLEAR;
+    a2CLEAR;
+    axis1DriverGotoFast();
+    gotoModeAxis1=true;
+    gotoModeAxis2=true;
+  } else {
+    a1CLEAR;
+    a2CLEAR;
+    axis1DriverTrackingFast();
+    gotoModeAxis1=false;
+    gotoModeAxis2=false;
+  }
+}
+#endif
 
 IRAM_ATTR ISR(TIMER3_COMPA_vect)
 {
@@ -267,7 +308,9 @@ IRAM_ATTR ISR(TIMER3_COMPA_vect)
     takeStepAxis1=false;
 #endif
 
-#if MODE_SWITCH_BEFORE_SLEW == OFF && defined(AXIS1_DRIVER_CODE_GOTO)
+#if defined(AXIS12_TMC2209_MODE_SHARED) && defined(AXIS1_DRIVER_CODE_GOTO) && defined(AXIS2_DRIVER_CODE_GOTO)
+  updateSharedTmc2209Mode();
+#elif MODE_SWITCH_BEFORE_SLEW == OFF && defined(AXIS1_DRIVER_CODE_GOTO)
   // switch micro-step mode
   if (gotoModeAxis1 != gotoRateAxis1) {
     // only when at an allowed position
@@ -360,7 +403,9 @@ IRAM_ATTR ISR(TIMER4_COMPA_vect)
     takeStepAxis2=false;
 #endif
 
-#if MODE_SWITCH_BEFORE_SLEW == OFF && defined(AXIS2_DRIVER_CODE_GOTO)
+#if defined(AXIS12_TMC2209_MODE_SHARED) && defined(AXIS1_DRIVER_CODE_GOTO) && defined(AXIS2_DRIVER_CODE_GOTO)
+  updateSharedTmc2209Mode();
+#elif MODE_SWITCH_BEFORE_SLEW == OFF && defined(AXIS2_DRIVER_CODE_GOTO)
   // switch micro-step mode
   if (gotoModeAxis2 != gotoRateAxis2) {
     // only when at an allowed position
