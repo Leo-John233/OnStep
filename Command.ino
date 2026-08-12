@@ -715,7 +715,7 @@ void processCommands() {
         const char *parkStatusCh = "pIPF";       reply[i++]=parkStatusCh[parkStatus];                        // not [p]arked, parking [I]n-progress, [P]arked, Park [F]ailed
         if (pecRecorded)                         reply[i++]='R';                                             // PEC data has been [R]ecorded
         if (syncToEncodersOnly)                  reply[i++]='e';                                             // sync to [e]ncoders only
-        if (atHome)                              reply[i++]='H';                                             // at [H]ome
+        if (atHome && positionReady())           reply[i++]='H';                                             // verified at [H]ome
         if (ppsSynced)                           reply[i++]='S';                                             // PPS [S]ync
         if (isPulseGuiding())                    reply[i++]='G';                                             // pulse [G]uide active
         if ((guideDirAxis1 || guideDirAxis2) && !isPulseGuiding())
