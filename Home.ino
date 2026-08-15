@@ -3,14 +3,14 @@
 // 回原点相关的功能
 
 #if (HOME_SENSE != OFF)
-// 【修改点 1】更新状态机枚举，必须包含 FH_IDLE2 和 FH_OFFSET
+// 1.更新状态机枚举，必须包含 FH_IDLE2 和 FH_OFFSET
 enum findHomeModes { FH_OFF, FH_FAST, FH_IDLE, FH_SLOW, FH_IDLE2, FH_OFFSET, FH_DONE };
 findHomeModes findHomeMode = FH_OFF;
 int PierSideStateAxis1 = LOW;
 int PierSideStateAxis2 = LOW;
 unsigned long findHomeTimeout = 0L;
 
-// 【修改点 2】新增：用于记录第三阶段（偏置）结束时间的变量
+// 2.新增：用于记录第三阶段（偏置）结束时间的变量
 unsigned long offsetTimeoutAxis1 = 0L;
 unsigned long offsetTimeoutAxis2 = 0L;
 
@@ -22,7 +22,7 @@ void checkHome() {
       if (guideDirAxis1 == 'e' || guideDirAxis1 == 'w') guideDirAxis1='b';
       if (guideDirAxis2 == 'n' || guideDirAxis2 == 's') guideDirAxis2='b';
       safetyLimitsOn=true;
-      // 传感器回零未完成时不能继续信任开环步数位置。
+      // 传感器回零未完成时不能继续信任开环步数位置
       invalidatePositionReference();
       gotoAbortState = GOTO_ABORT_NONE;
       findHomeMode=FH_OFF;
@@ -44,8 +44,8 @@ void checkHome() {
   if (findHomeMode == FH_IDLE2 && guideDirAxis1 == 0 && guideDirAxis2 == 0) {
     findHomeMode = FH_OFFSET; // 进入偏置阶段
 
-    // 第三阶段只属于 HOME_SENSE 自动回零；这里已经位于 #if HOME_SENSE != OFF 内。
-    // 使用 Config.h 中选定的速度档位计算时间，不额外修改 Config.h。
+    // 第三阶段只属于 HOME_SENSE 自动回零；这里已经位于 #if HOME_SENSE != OFF 内
+    // 使用 Config.h 中选定的速度档位计算时间，不额外修改 Config.h
     double secPerDeg = 3600.0 / (double)guideRates[HOME_OFFSET_RATE];
     CommandErrors e1 = CE_NONE;
     CommandErrors e2 = CE_NONE;
@@ -124,7 +124,7 @@ void checkHome() {
       atHome=true;
     #endif
 
-    // 真实回原点完成后，所有结构类型都重新建立可信坐标基准。
+    // 真实回原点完成后，所有结构类型都重新建立可信坐标基准
     completePositionRecovery();
     safetyLimitsOn = true;
     abortGoto = 0;
@@ -156,7 +156,7 @@ void StopAxis2() {
 // moves telescope to the home position, then stops tracking
 // 将望远镜移回初始位置，然后停止跟踪
 CommandErrors goHome(bool fast) {
-  // 恢复性 Home 可覆盖残留的 Parked 标记。
+  // 恢复性 Home 可覆盖残留的 Parked 标记
 #if HOME_SENSE == OFF
   const bool homeMayOverridePark = positionHomeReturnOnly();
 #else
@@ -170,7 +170,7 @@ CommandErrors goHome(bool fast) {
   CommandErrors e=validateGoto();
 
 #if HOME_SENSE == OFF
-  // 无 Home 传感器时，保留的可信坐标只能用于返回 Home。
+  // 无 Home 传感器时，保留的可信坐标只能用于返回 Home
   const bool coordinateHomeSafe =
     parkStatus == NotParked && !trackingSyncInProgress() &&
     trackingState != TrackingMoveTo && guideDirAxis1 == 0 && guideDirAxis2 == 0 &&
@@ -183,7 +183,7 @@ CommandErrors goHome(bool fast) {
   
 #if HOME_SENSE != OFF
   if (e != CE_NONE && e != CE_SLEW_ERR_IN_STANDBY) return e;
-  // 自动回零是恢复 standby/位置不可信状态的合法通道。
+  // 自动回零是恢复 standby/位置不可信状态的合法通道
   if (e == CE_SLEW_ERR_IN_STANDBY) e = CE_NONE;
 
   if (findHomeMode != FH_OFF) return CE_MOUNT_IN_MOTION;
@@ -193,7 +193,7 @@ CommandErrors goHome(bool fast) {
   abortTrackingState=trackingState;
   trackingState=TrackingNone;
 
-  // 自动回零开始后，直到 FH_DONE 都不再信任原开环坐标。
+  // 自动回零开始后，直到 FH_DONE 都不再信任原开环坐标
   invalidatePositionReference();
   gotoAbortState = GOTO_ABORT_NONE;
 
@@ -225,7 +225,7 @@ CommandErrors goHome(bool fast) {
     enableStepperDrivers();
 
     findHomeMode=FH_FAST;
-    // 默认9档时与原版超时一致；改变速度后仍保持约360度的搜索余量。
+    // 默认9档时与原版超时一致；改变速度后仍保持约360度的搜索余量
     double secPerDeg=3600.0/(double)guideRates[HOME_FAST_RATE];
     findHomeTimeout=millis()+(unsigned long)(secPerDeg*360.0*1000.0);
     
@@ -235,7 +235,7 @@ CommandErrors goHome(bool fast) {
     if (e == CE_NONE) VLF("MSG: Homing started phase 1"); else VLF("MSG: Homing start phase 1 failed");
   } else {
     findHomeMode=FH_SLOW;
-    // 默认7档时为原来的30秒；改变速度后仍保持约6度的精找范围。
+    // 默认7档时为原来的30秒；改变速度后仍保持约6度的精找范围
     double secPerDeg=3600.0/(double)guideRates[HOME_SLOW_RATE];
     findHomeTimeout=millis()+(unsigned long)(secPerDeg*6.0*1000.0);
     
@@ -321,10 +321,10 @@ CommandErrors setHome() {
   if (!pecRecorded) pecStatus=IgnorePEC;
 
   // Set Home 的语义是用户确认机械位置与定义的 Home 坐标一致，
-  // 因此无论是否安装 HOME_SENSE 都可重新建立可信坐标基准。
+  // 因此无论是否安装 HOME_SENSE 都可重新建立可信坐标基准
   completePositionRecovery();
 
-  // 清理上一次安全中断或限位导致的残留状态。
+  // 清理上一次安全中断或限位导致的残留状态
   abortGoto = 0;
   generalError = ERR_NONE;
 

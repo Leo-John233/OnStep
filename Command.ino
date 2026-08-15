@@ -1382,7 +1382,7 @@ void processCommands() {
 //              9=unspecified error
 if (command[1] == 'S' && parameter[0] == 0)  {
         // 所有 GOTO 入口统一由 validateGoto() 检查位置可信状态，
-        // 这里不再根据 HOME_SENSE 建立一套容易被其他命令绕过的旁路逻辑。
+        // 这里不再根据 HOME_SENSE 建立一套容易被其他命令绕过的旁路逻辑
         newTargetRA = origTargetRA;
         newTargetDec = origTargetDec;
 #if TELESCOPE_COORDINATES == TOPOCENTRIC
@@ -2062,13 +2062,13 @@ if (command[1] == 'S' && parameter[0] == 0)  {
 //                    1 on success
 
       if (command[0] == 'T' && parameter[0] == 0) {
-        // Tracking enable 同样只依赖位置是否可信，而不依赖是否安装传感器。
+        // Tracking enable 同样只依赖位置是否可信，而不依赖是否安装传感器
         const bool trackingBlockedUntilRecovery =
           (command[1] == 'e' && !positionReady());
 
         if (trackingBlockedUntilRecovery) {
-          // 保持 boolReply=true，让命令处理器立即返回字符 '0'。
-          // 旧逻辑提前 return 且 suppress frame，ASCOM/NINA 只能等待到超时。
+          // 保持 boolReply=true，让命令处理器立即返回字符 '0'
+          // 旧逻辑提前 return 且 suppress frame，ASCOM/NINA 只能等待到超时
           commandError = CE_SLEW_ERR_IN_STANDBY;
         } else {
 #if MOUNT_TYPE != ALTAZM

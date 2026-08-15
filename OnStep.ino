@@ -5,18 +5,18 @@
  * 版权所有 (C) 2012 至 2021 Howard Dutton
  *
  * 本程序为自由软件：您可以根据自由软件基金会发布的 GNU 通用公共许可证（GNU GPL）
- * 的条款重新分发和/或修改它，无论是许可证的第 3 版，还是（由您选择）任何更高版本。
+ * 的条款重新分发和/或修改它，无论是许可证的第 3 版，还是（由您选择）任何更高版本
  *
  * 本程序的发布是希望它能有用，但【没有任何担保】；
- * 甚至没有对【适销性】或【特定用途适用性】的暗示性担保。
- * 有关更多详细信息，请参阅 GNU 通用公共许可证。
+ * 甚至没有对【适销性】或【特定用途适用性】的暗示性担保
+ * 有关更多详细信息，请参阅 GNU 通用公共许可证
  *
- * 您应该随本程序一起收到了一份 GNU 通用公共许可证的副本。
- * 如果没有，请参阅 <http://www.gnu.org/licenses/>。
+ * 您应该随本程序一起收到了一份 GNU 通用公共许可证的副本
+ * 如果没有，请参阅 <http://www.gnu.org/licenses/>
  *
  * 描述:
  * 功能齐全的步进电机望远镜微控制器，适用于赤道仪和经纬仪支架，
- * 采用衍生自 LX200 的指令集。
+ * 采用衍生自 LX200 的指令集
  *
  * 作者: Howard Dutton
  * http://www.stellarjourney.com
@@ -45,38 +45,38 @@
 
 #include "Constants.h"
 
-// --- 新增限位锁死状态变量 ---
+// --- 限位锁死状态变量 ---
 // 0=无锁死, 1=正向锁死(如East/North), -1=反向锁死(如West/South)
 int Axis1_LimitLock = 0;
 int Axis2_LimitLock = 0;
-unsigned long lastLimitTriggerTime = 0; // [新增] 用于非阻塞消抖计时
-// GOTO 安全中断分类。该状态与 HOME_SENSE / LIMIT_SENSE 的编译配置无关，
-// 避免关闭传感器后安全中断被误判为正常 GOTO 完成。
+unsigned long lastLimitTriggerTime = 0; // 用于非阻塞消抖计时
+// GOTO 安全中断分类该状态与 HOME_SENSE / LIMIT_SENSE 的编译配置无关
+// 避免关闭传感器后安全中断被误判为正常 GOTO 完成
 enum GotoAbortState { GOTO_ABORT_NONE, GOTO_ABORT_STOPPED, GOTO_ABORT_HARD_STOP, GOTO_ABORT_POSITION_LOST };
 GotoAbortState gotoAbortState = GOTO_ABORT_NONE;
 
 // Only a normal celestial GOTO may request sidereal tracking on successful arrival.
 bool gotoStartTrackingOnSuccess = false;
 
-// 当前步数坐标是否仍可作为真实机械位置使用。
-// 标准 OnStep 启动假定赤道仪位于已知起始位置；HOME_REQUIRED_ON_BOOT 可要求先回零确认。
+// 当前步数坐标是否仍可作为真实机械位置使用
+// 标准 OnStep 启动假定赤道仪位于已知起始位置；HOME_REQUIRED_ON_BOOT 可要求先回零确认
 bool mountPositionTrusted = true;
 
-// 物理限位、驱动器故障或失败的传感器回零会置位。
-// HOME_SENSE 开启时可通过自动回零恢复；HOME_SENSE 关闭时可在人工放回零位后执行 Set Home 恢复。
+// 物理限位、驱动器故障或失败的传感器回零会置位
+// HOME_SENSE 开启时可通过自动回零恢复；HOME_SENSE 关闭时可在人工放回零位后执行 Set Home 恢复
 bool positionRecoveryRequired = false;
 
-// 首次上传时，OnStep 会自动初始化 nv 存储器（EEPROM）中的一系列设置。
-// 此选项会强制再次进行初始化。
-// 将其改为 ON，上传 OnStep，nv 将被重置为默认值。
-// 等待约 30 秒后，将其设置为 OFF 并再次上传。
+// 首次上传时，OnStep 会自动初始化 nv 存储器（EEPROM）中的一系列设置
+// 此选项会强制再次进行初始化
+// 将其改为 ON，上传 OnStep，nv 将被重置为默认值
+// 等待约 30 秒后，将其设置为 OFF 并再次上传
 // *** 重要提示：此选项不得一直设置为 true (ON)，否则会导致 EEPROM 或 FLASH 过度损耗 ***
 #define NV_FACTORY_RESET OFF
 
 // 在指定的 DebugSer 端口上启用额外的调试和/或状态消息
 // 请注意，DebugSer 端口不能用于与 OnStep 的正常通信（如控制望远镜）
-#define DEBUG OFF             // 默认=OFF。使用 "DEBUG ON" 仅显示后台错误，
-                              // 使用 "DEBUG VERBOSE" 显示所有错误和状态消息。
+#define DEBUG OFF             // 默认=OFF使用 "DEBUG ON" 仅显示后台错误，
+                              // 使用 "DEBUG VERBOSE" 显示所有错误和状态消息
 #define DebugSer SerialA      // 默认=SerialA，或者例如 Serial4（始终为 9600 波特率）
 
 #include <errno.h>
@@ -185,7 +185,7 @@ weather ambient;
 #endif
 
 // 恢复状态与原版运动状态解耦：可信且无需恢复=正常；可信但需恢复=仅允许坐标回零；
-// 不可信且需恢复=必须通过传感器 Home 或 Set Home 重建位置基准。
+// 不可信且需恢复=必须通过传感器 Home 或 Set Home 重建位置基准
 void clearPhysicalLimitState() {
   Axis1_LimitLock = 0;
   Axis2_LimitLock = 0;
@@ -228,10 +228,10 @@ void setup() {
   fa.init(AddonTriggerPin,AddonResetPin,AddonBootModePin);
 #endif
 
-  // 等待半秒钟，让所有连接的设备启动完毕，然后再开始设置引脚。
+  // 等待半秒钟，让所有连接的设备启动完毕，然后再开始设置引脚
   delay(10);//[修改] 缩短等待时间，原始值500
 #if DEBUG != OFF
-  // 提前初始化 USB 串口调试，以便在需要时可以使用 DebugSer.print() 进行调试。
+  // 提前初始化 USB 串口调试，以便在需要时可以使用 DebugSer.print() 进行调试
   DebugSer.begin(9600);
   delay(5000); DebugSer.flush(); VLF(""); VLF("");
 #endif
@@ -347,7 +347,7 @@ void setup() {
   // 设置步进电机驱动模式
   VLF("MSG: Init motor timers");
   StepperModeTrackingInit();
-  // 启动保持恒星时、驱动电机等的硬件定时器。
+  // 启动保持恒星时、驱动电机等的硬件定时器
   setTrackingRate(DefaultTrackingRate);
   setDeltaTrackingRate();
   initStartTimers();
@@ -391,7 +391,7 @@ void setup() {
   #if MOUNT_TYPE != ALTAZM
     VLF("MSG: Home/Set Home required before GOTO/tracking");
     #if HOME_SENSE == OFF
-      // 启动步数仍描述 Home，但客户端必须显式执行/确认回零。
+      // 启动步数仍描述 Home，但客户端必须显式执行/确认回零
       requireCoordinateHomeRecovery();
     #else
       invalidatePositionReference();
@@ -511,23 +511,23 @@ void loop2() {
   if (isHoming()) {
       wasHoming = true; // 系统正在回原点
   } else if (wasHoming) {
-      // 不在主循环里直接把 mountPositionTrusted 置 true。
-      // 真实自动回零成功只由 Home.ino 的 FH_DONE 阶段确认，避免回零失败也误解锁。
+      // 不在主循环里直接把 mountPositionTrusted 置 true
+      // 真实自动回零成功只由 Home.ino 的 FH_DONE 阶段确认，避免回零失败也误解锁
       wasHoming = false;
   }
   // =========================================================
 #endif
 
-  // 导星 (GUIDING) -------------------------------------------------------------------------------------------
+  // 导星 (GUIDING) 
   ST4();
   if ((trackingState != TrackingMoveTo) && (parkStatus == NotParked)) guide();
 
 #if HOME_SENSE != OFF
-  // 自动回原点 (AUTOMATIC HOMING) ----------------------------------------------------------------------------------
+  // 自动回原点 (AUTOMATIC HOMING) 
   checkHome();
 #endif
 
-  // 1/100 秒定时任务 --------------------------------------------------------------------------------
+  // 1/100 秒定时任务 
   cli(); long lstNow=lst; sei();
   if (lstNow != siderealTimer) {
     siderealTimer=lstNow;
@@ -605,7 +605,7 @@ void loop2() {
         return;
       }
 
-      // 1. 【最高权限】回零模式直接放行
+      // 1. 回零模式直接放行（最高权限）
       // 2. 简单的触发滤波
       delay(2);
       if (digitalRead(LimitPin) == LIMIT_SENSE_STATE) {
@@ -666,8 +666,8 @@ void loop2() {
         // 5. 逃离判断 (Escape Logic)
         // =========================================================
         // 只有所有正在移动且已锁定的轴都朝脱离限位方向运动时，
-        // 才允许继续。旧逻辑使用 OR，可能出现一个轴在逃离、另一个轴仍
-        // 朝限位方向运动却被整体判定为安全。
+        // 才允许继续旧逻辑使用 OR，可能出现一个轴在逃离、另一个轴仍
+        // 朝限位方向运动却被整体判定为安全
         const bool axis1MovingIntoLimit =
           Axis1_LimitLock != 0 && currentMotionDir1 != 0 && currentMotionDir1 == Axis1_LimitLock;
         const bool axis2MovingIntoLimit =
@@ -681,8 +681,8 @@ void loop2() {
         if (!isEscaping) {
             generalError = ERR_LIMIT_SENSE;
 
-            // 物理限位属于硬中断。是否需要重新回零统一由
-            // stopSlewingAndTracking(SS_LIMIT_PHYSICAL) 判定，避免多处重复修改状态。
+            // 物理限位属于硬中断是否需要重新回零统一由
+            // stopSlewingAndTracking(SS_LIMIT_PHYSICAL) 判定，避免多处重复修改状态
             stopGuideAxis1(); 
             stopGuideAxis2();
             stopSlewingAndTracking(SS_LIMIT_PHYSICAL);
@@ -902,7 +902,7 @@ void loop2() {
 // SS_LIMIT_AXIS2_MAX 停止 GOTO + 螺旋搜寻 + 跟踪，并停止/阻止正向的赤纬/高度角导星
 void stopSlewingAndTracking(StopSlewActions ss) {
 
-  // 驱动器硬故障可能造成丢步，必须重新建立位置基准。
+  // 驱动器硬故障可能造成丢步，必须重新建立位置基准
   if (ss == SS_LIMIT_HARD) {
     invalidatePositionReference();
     safetyLimitsOn=false;
@@ -913,7 +913,7 @@ void stopSlewingAndTracking(StopSlewActions ss) {
     gotoStartTrackingOnSuccess=false;
 #if HOME_REQUIRED_AFTER_LIMIT == ON
   #if HOME_SENSE == OFF
-    // 限位开关已停止指令运动；保留坐标，但仅允许返回 Home。
+    // 限位开关已停止指令运动；保留坐标，但仅允许返回 Home
     requireCoordinateHomeRecovery();
   #else
     invalidatePositionReference();
@@ -928,11 +928,11 @@ void stopSlewingAndTracking(StopSlewActions ss) {
   if (trackingState == TrackingMoveTo) {
 
     // 任何中止都不能继续使用“正常到达后自动跟踪”的一次性请求；
-    // lastTrackingState 和原版 Abort/5 秒同步流程保持不变。
+    // lastTrackingState 和原版 Abort/5 秒同步流程保持不变
     gotoStartTrackingOnSuccess=false;
 
     // 软件轴范围、中天和高度限制属于可恢复中止；硬故障状态优先级更高，
-    // 不能被后续的软件停止原因覆盖。
+    // 不能被后续的软件停止原因覆盖
     if (ss != SS_ALL_FAST && gotoAbortState == GOTO_ABORT_NONE) gotoAbortState=GOTO_ABORT_STOPPED;
 
     if (!abortGoto) {
