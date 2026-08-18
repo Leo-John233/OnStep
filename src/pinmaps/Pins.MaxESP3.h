@@ -71,6 +71,11 @@
 #define Axis2_DECAY    Axis2_M2     // Decay mode(衰变模式)
 #define Axis2_HOME         Aux6     // Sense home position(感知原点位置)
 
+// M0/M1 are the shared MOSI/SCK nets on MaxESP3.  SPI drivers remain
+// independently addressable through M2/CS.  Standalone drivers such as the
+// TMC2209 must keep both axes in one fixed hardware microstep mode.
+#define AXIS12_DRIVER_MODE_PINS_SHARED
+
 // For rotator stepper driver
 #define Axis3_EN            OFF     // No enable pin control (always enabled)
 #define Axis3_STEP          OFF     // Step(原始值IO2)
