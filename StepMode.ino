@@ -294,9 +294,6 @@ void axis2DriverGotoMode() {
       a1M2(bitRead(AXIS1_DRIVER_CODE,2));
     #endif
       stepAxis1=1;
-#ifdef AXIS12_TMC2209_MODE_SHARED
-      stepAxis2=1;
-#endif
     }
     IRAM_ATTR void axis1DriverGotoFast() {
       a1M0(bitRead(AXIS1_DRIVER_CODE_GOTO,0));
@@ -305,35 +302,24 @@ void axis2DriverGotoMode() {
       a1M2(bitRead(AXIS1_DRIVER_CODE_GOTO,2));
     #endif
       stepAxis1=axis1StepsGoto;
-#ifdef AXIS12_TMC2209_MODE_SHARED
-      stepAxis2=axis2StepsGoto;
-#endif
     }
   #endif
   #ifdef AXIS2_DRIVER_CODE_GOTO
     IRAM_ATTR void axis2DriverTrackingFast() {
-#ifdef AXIS12_TMC2209_MODE_SHARED
-      axis1DriverTrackingFast();
-#else
       a2M0(bitRead(AXIS2_DRIVER_CODE,0));
       a2M1(bitRead(AXIS2_DRIVER_CODE,1));
     #ifndef AXIS2_DRIVER_DISABLE_M2
       a2M2(bitRead(AXIS2_DRIVER_CODE,2));
     #endif
       stepAxis2=1;
-#endif
     }
     IRAM_ATTR void axis2DriverGotoFast() {
-#ifdef AXIS12_TMC2209_MODE_SHARED
-      axis1DriverGotoFast();
-#else
       a2M0(bitRead(AXIS2_DRIVER_CODE_GOTO,0));
       a2M1(bitRead(AXIS2_DRIVER_CODE_GOTO,1));
     #ifndef AXIS2_DRIVER_DISABLE_M2
       a2M2(bitRead(AXIS2_DRIVER_CODE_GOTO,2));
     #endif
       stepAxis2=axis2StepsGoto;
-#endif
     }
   #endif
 #endif

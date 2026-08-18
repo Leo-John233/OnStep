@@ -1173,25 +1173,6 @@
   #include "src/sd_drivers/Validate.GENERIC.h"
   #include "src/sd_drivers/Validate.SERVO.h"
 
-  // Some SPI-oriented boards share the Axis1/Axis2 M0 and M1 nets.  A
-  // standalone TMC2209 can still use different tracking/Goto microsteps on
-  // those boards, but both axes must use the same settings and switch as one.
-  #if defined(AXIS12_DRIVER_MODE_PINS_SHARED) && (AXIS1_DRIVER_MODEL == TMC2209 || AXIS2_DRIVER_MODEL == TMC2209)
-    #if AXIS1_DRIVER_MODEL != TMC2209 || AXIS2_DRIVER_MODEL != TMC2209
-      #error "Configuration (Config.h): shared M0/M1 pins require TMC2209 on both Axis1 and Axis2."
-    #endif
-    #if AXIS1_DRIVER_MICROSTEPS != AXIS2_DRIVER_MICROSTEPS
-      #error "Configuration (Config.h): shared TMC2209 M0/M1 pins require equal Axis1/Axis2 tracking microsteps."
-    #endif
-    #if AXIS1_DRIVER_MICROSTEPS_GOTO != AXIS2_DRIVER_MICROSTEPS_GOTO
-      #error "Configuration (Config.h): shared TMC2209 M0/M1 pins require equal Axis1/Axis2 Goto microsteps."
-    #endif
-    #if MODE_SWITCH_BEFORE_SLEW != OFF
-      #error "Configuration (Config.h): shared TMC2209 M0/M1 pins require on-the-fly mode switching."
-    #endif
-    #define AXIS12_TMC2209_MODE_SHARED
-  #endif
-
   #if AXIS1_DRIVER_DECAY_MODE_GOTO == STEALTHCHOP || AXIS2_DRIVER_DECAY_MODE_GOTO == STEALTHCHOP
     #warning "Configuration (Config.h): TMC stepper driver _VQUIET mode is generally not recommended except for situations where motor RPM is low."
   #endif
@@ -1202,6 +1183,27 @@
     #define AXIS1_DRIVER_MICROSTEPS_GOTO AXIS1_DRIVER_MICROSTEPS
     #undef AXIS2_DRIVER_MICROSTEPS_GOTO
     #define AXIS2_DRIVER_MICROSTEPS_GOTO AXIS2_DRIVER_MICROSTEPS
+  #endif
+
+  // Some SPI-oriented boards share the Axis1/Axis2 M0 and M1 nets.  With
+  // standalone TMC2209 drivers a runtime change on either axis changes both
+  // physical drivers, while the two motor ISRs update their software scales
+  // independently.  Keep both drivers at the tracking microstep setting for
+  // every motion.  TMC SPI drivers are not affected: they use independent CS.
+  #if defined(AXIS12_DRIVER_MODE_PINS_SHARED) && (AXIS1_DRIVER_MODEL == TMC2209 || AXIS2_DRIVER_MODEL == TMC2209)
+    #if AXIS1_DRIVER_MODEL != TMC2209 || AXIS2_DRIVER_MODEL != TMC2209
+      #error "Configuration (Config.h): shared M0/M1 pins require TMC2209 on both Axis1 and Axis2."
+    #endif
+    #if AXIS1_DRIVER_MICROSTEPS != AXIS2_DRIVER_MICROSTEPS
+      #error "Configuration (Config.h): shared TMC2209 M0/M1 pins require equal Axis1/Axis2 tracking microsteps."
+    #endif
+    #if AXIS1_DRIVER_MICROSTEPS_GOTO != OFF || AXIS2_DRIVER_MICROSTEPS_GOTO != OFF
+      #warning "Shared standalone TMC2209 M0/M1 pins: runtime Goto microstep switching is disabled; tracking microsteps are used for all motion."
+      #undef AXIS1_DRIVER_MICROSTEPS_GOTO
+      #define AXIS1_DRIVER_MICROSTEPS_GOTO OFF
+      #undef AXIS2_DRIVER_MICROSTEPS_GOTO
+      #define AXIS2_DRIVER_MICROSTEPS_GOTO OFF
+    #endif
   #endif
 
 #else
