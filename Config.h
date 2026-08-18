@@ -194,7 +194,7 @@
 
 #define AXIS1_DRIVER_MODEL  TMC5160_QUIET //    OFF, (见上文). 驱动器型号.                                        <-Often
 #define AXIS1_DRIVER_MICROSTEPS       64  //    OFF, n. 跟踪时的细分模式.                                         <-Often
-#define AXIS1_DRIVER_MICROSTEPS_GOTO  32  //    OFF, n. GOTO (高速转向) 时的细分模式 (通常降低细分防丢步)            Option
+#define AXIS1_DRIVER_MICROSTEPS_GOTO OFF  //    OFF, n. GOTO (高速转向) 时的细分模式 (通常降低细分防丢步)            Option
 #define AXIS1_DRIVER_IHOLD            OFF //    OFF, n, (mA.) 静止时的电流。OFF 代表使用 IRUN 的一半                Option
 #define AXIS1_DRIVER_IRUN            1400 //    OFF, n, (mA.) 跟踪时的电流。根据电机/驱动调整                       Option
 #define AXIS1_DRIVER_IGOTO           1500 //    OFF, n, (mA.) GOTO时的电流。OFF 代表和 IRUN 一样.                  Option
@@ -213,7 +213,7 @@
 
 #define AXIS2_DRIVER_MODEL  TMC5160_QUIET //    OFF, 同上.                                                        <-Often
 #define AXIS2_DRIVER_MICROSTEPS       64  //    OFF, 跟踪细分.                                                    <-Often
-#define AXIS2_DRIVER_MICROSTEPS_GOTO  32  //    OFF, GOTO细分.                                                    Option
+#define AXIS2_DRIVER_MICROSTEPS_GOTO OFF  //    OFF, GOTO细分.                                                    Option
 #define AXIS2_DRIVER_IHOLD            OFF //    OFF, 静止电流.                                                     Option
 #define AXIS2_DRIVER_IRUN            1200 //    OFF, 跟踪电流.                                                     Option
 #define AXIS2_DRIVER_IGOTO           1300 //    OFF, GOTO电流.                                                     Option
