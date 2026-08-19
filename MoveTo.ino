@@ -259,64 +259,33 @@ void moveTo() {
         sei();
   
         if (homeMount) {
-          const GotoAbortState completedHomeState=gotoAbortState;
-          if (completedHomeState != GOTO_ABORT_NONE) {
-            // 坐标 Home 被中断时不得解除正常运动锁。
-            homeMount=false;
-            trackingSyncSeconds=0;
-            trackingState=TrackingNone;
-            lastTrackingState=TrackingNone;
-            gotoAbortState=GOTO_ABORT_NONE;
-            gotoStartTrackingOnSuccess=false;
-            SiderealClockSetInterval(siderealInterval);
-            setDeltaTrackingRate();
-            VLF("MSG: Homing stopped; recovery state retained");
-          } else {
-            if (parkClearBacklash() == -1) return;  // working, no error flagging
-            soundAlert();
-            trackingState=lastTrackingState; lastTrackingState=TrackingNone;
-            SiderealClockSetInterval(siderealInterval);
-            homeMount=false;
-            if (AXIS2_TANGENT_ARM == OFF) atHome=true;
-            completePositionRecovery();
-            safetyLimitsOn=true;
-            VLF("MSG: Homing done");
-          }
+          // clear the backlash
+          if (parkClearBacklash() == -1) return;  // working, no error flagging
+
+          // sound goto done
+          soundAlert();
+
+          // restore trackingState
+          trackingState=lastTrackingState; lastTrackingState=TrackingNone;
+          SiderealClockSetInterval(siderealInterval);
+
+          // at the polar home position
+          homeMount=false;
+          if (AXIS2_TANGENT_ARM == OFF) atHome=true;
+
+          VLF("MSG: Homing done");
         } else {
-          const GotoAbortState completedGotoState=gotoAbortState;
-          const bool startTracking=gotoStartTrackingOnSuccess;
-          trackingSyncSeconds=0;
-
-          if (completedGotoState == GOTO_ABORT_POSITION_LOST || !positionReady()) {
-            trackingState=TrackingNone;
-            lastTrackingState=TrackingNone;
-            SiderealClockSetInterval(siderealInterval);
-            setDeltaTrackingRate();
-            if (generalError == ERR_NONE) generalError=ERR_LIMIT_SENSE;
-            VLF("MSG: Goto stopped; Home/Set Home required");
-          } else if (completedGotoState == GOTO_ABORT_HARD_STOP) {
-            trackingState=TrackingNone;
-            lastTrackingState=TrackingNone;
-            SiderealClockSetInterval(siderealInterval);
-            setDeltaTrackingRate();
-            VLF("MSG: Goto stopped by physical limit");
-          } else {
-            trackingState=lastTrackingState;
-            lastTrackingState=TrackingNone;
-            if (completedGotoState == GOTO_ABORT_NONE && startTracking) trackingState=TrackingSidereal;
-            SiderealClockSetInterval(siderealInterval);
-            setDeltaTrackingRate();
-            if (completedGotoState == GOTO_ABORT_NONE) VLF("MSG: Goto done");
-            else VLF("MSG: Goto stopped");
-
-            // 仅未被安全状态分类的完成路径进入原版 GOTO 后同步窗口。
-            if (completedGotoState == GOTO_ABORT_NONE && trackingState == TrackingSidereal) {
-              trackingSyncSeconds=5;
-              VLF("MSG: Tracking sync started");
-            }
+          // restore trackingState
+          trackingState=lastTrackingState; lastTrackingState=TrackingNone;
+          SiderealClockSetInterval(siderealInterval);
+          setDeltaTrackingRate();
+          VLF("MSG: Goto done");
+          
+          // allow 5 seconds for synchronization of coordinates after goto ends
+          if (trackingState == TrackingSidereal) {
+            trackingSyncSeconds=5;
+            VLF("MSG: Tracking sync started");
           }
-          gotoAbortState=GOTO_ABORT_NONE;
-          gotoStartTrackingOnSuccess=false;
         }
       }
     }

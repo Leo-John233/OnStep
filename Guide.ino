@@ -150,26 +150,15 @@ CommandErrors startGuideAxis1(char direction, int guideRate, long guideDuration,
   if (trackingState == TrackingMoveTo)    return CE_MOUNT_IN_MOTION;
   if (isSpiralGuiding())                  return CE_MOUNT_IN_MOTION;
   if (direction == guideDirAxis1)         return CE_NONE;
-
-  bool escapingPhysicalLimitAxis1 = false;
-#if LIMIT_SENSE != OFF
-  if (direction == 'e' && Axis1_LimitLock == 1)  return CE_SLEW_ERR_OUTSIDE_LIMITS;
-  if (direction == 'w' && Axis1_LimitLock == -1) return CE_SLEW_ERR_OUTSIDE_LIMITS;
-
-  escapingPhysicalLimitAxis1 = (generalError == ERR_LIMIT_SENSE) &&
-                               ((direction == 'e' && Axis1_LimitLock == -1) ||
-                                (direction == 'w' && Axis1_LimitLock == 1));
-#endif
-
   if (direction == 'e' && !guideEastOk()) return CE_SLEW_ERR_OUTSIDE_LIMITS;
   if (direction == 'w' && !guideWestOk()) return CE_SLEW_ERR_OUTSIDE_LIMITS;
-  if (!escapingPhysicalLimitAxis1 && guideRate < 3 && (generalError == ERR_ALT_MIN ||
-                                                       generalError == ERR_LIMIT_SENSE ||
-                                                       generalError == ERR_DEC ||
-                                                       generalError == ERR_AZM ||
-                                                       generalError == ERR_UNDER_POLE ||
-                                                       generalError == ERR_MERIDIAN ||
-                                                       generalError == ERR_ALT_MAX)) return CE_SLEW_ERR_OUTSIDE_LIMITS;
+  if (guideRate < 3 && (generalError == ERR_ALT_MIN ||
+                        generalError == ERR_LIMIT_SENSE ||
+                        generalError == ERR_DEC ||
+                        generalError == ERR_AZM ||
+                        generalError == ERR_UNDER_POLE ||
+                        generalError == ERR_MERIDIAN ||
+                        generalError == ERR_ALT_MAX)) return CE_SLEW_ERR_OUTSIDE_LIMITS;
   
   if (guideRate < 3) deactivateBacklashComp(); else reactivateBacklashComp();
   enableGuideRate(guideRate);
@@ -198,26 +187,15 @@ CommandErrors startGuideAxis2(char direction, int guideRate, long guideDuration,
   if (trackingState == TrackingMoveTo)     return CE_MOUNT_IN_MOTION;
   if (isSpiralGuiding())                   return CE_MOUNT_IN_MOTION;
   if (direction == guideDirAxis2)          return CE_NONE;
-
-  bool escapingPhysicalLimitAxis2 = false;
-#if LIMIT_SENSE != OFF
-  if (direction == 'n' && Axis2_LimitLock == 1)  return CE_SLEW_ERR_OUTSIDE_LIMITS;
-  if (direction == 's' && Axis2_LimitLock == -1) return CE_SLEW_ERR_OUTSIDE_LIMITS;
-
-  escapingPhysicalLimitAxis2 = (generalError == ERR_LIMIT_SENSE) &&
-                               ((direction == 'n' && Axis2_LimitLock == -1) ||
-                                (direction == 's' && Axis2_LimitLock == 1));
-#endif
-
   if (direction == 'n' && !guideNorthOk()) return CE_SLEW_ERR_OUTSIDE_LIMITS;
   if (direction == 's' && !guideSouthOk()) return CE_SLEW_ERR_OUTSIDE_LIMITS;
-  if (!escapingPhysicalLimitAxis2 && guideRate < 3 && (generalError == ERR_ALT_MIN ||
-                                                       generalError == ERR_LIMIT_SENSE ||
-                                                       generalError == ERR_DEC ||
-                                                       generalError == ERR_AZM ||
-                                                       generalError == ERR_UNDER_POLE ||
-                                                       generalError == ERR_MERIDIAN ||
-                                                       generalError == ERR_ALT_MAX)) return CE_SLEW_ERR_OUTSIDE_LIMITS;
+  if (guideRate < 3 && (generalError == ERR_ALT_MIN ||
+                        generalError == ERR_LIMIT_SENSE ||
+                        generalError == ERR_DEC ||
+                        generalError == ERR_AZM ||
+                        generalError == ERR_UNDER_POLE ||
+                        generalError == ERR_MERIDIAN ||
+                        generalError == ERR_ALT_MAX)) return CE_SLEW_ERR_OUTSIDE_LIMITS;
 
   enableGuideRate(guideRate);
   if (guideRate < 3) deactivateBacklashComp(); else reactivateBacklashComp();
@@ -418,13 +396,10 @@ void enableGuideRate(int g) {
   amountGuideAxis2.fixed=doubleToFixed((guideTimerBaseRateAxis2*stepsPerSecondAxis2)/100.0);
 }
 
-// =======================================================================
-// ST4() 函数
-// 处理 ST4 接口输入、智能手控器 (SHC) 通信、以及长按回原点与 AltMode 功能
-// =======================================================================
+// handle the ST4 interface and hand controller features
 void ST4() {
 #if ST4_INTERFACE == ON || ST4_INTERFACE == ON_PULLUP
-  // 轮询按键状态
+  // get ST4 button presses
   st4e.poll();
   static bool shcActive=false;
   if (!shcActive) {
@@ -435,9 +410,7 @@ void ST4() {
 
 #if ST4_HAND_CONTROL == ON
 
-  // ---------------------------------------------------------
-  // 智能手控器 (Smart Hand Controller) 检测逻辑
-  // ---------------------------------------------------------
+  // check for smart hand control
   if (st4e.hasTone()) {
     if (!shcActive) {
       if (st4w.hasTone()) {
@@ -478,73 +451,22 @@ void ST4() {
     }
   }
 
-  // ---------------------------------------------------------
-  // 标准手控器逻辑 (Standard Hand Control)
-  // 包含：组合按键 AltMode 功能、长按3秒回原点功能
-  // ---------------------------------------------------------
+  // standard hand control
   const long Shed_ms=4000;
   const long AltMode_ms=2000;
 
-  // 提前声明 AltMode 状态变量，以便在 3 秒回原点时能强制复位它
-  static bool altModeA=false;
-  static bool altModeB=false;
-
-  // =================================================================
-  // 长按3秒触发回原点，附带按键屏蔽锁，保护电机脉冲
-  // =================================================================
-  static bool homingLockout = false; // 屏蔽锁状态标志
-
-  // 如果锁是开启的，说明已经触发了回原点，此时只检测是否松手
-  if (homingLockout) {
-    if (!st4e.isDown() && !st4w.isDown() && !st4n.isDown() && !st4s.isDown()) {
-      homingLockout = false; 
-    }
-    return; // 拦截点，彻底屏蔽干扰
-  }
-
-  // 长按 3 秒回原点检测逻辑
-  if ((trackingState != TrackingMoveTo) && (!waitingHome)) {
-    if (st4e.isDown() && st4w.isDown()) {
-      
-      // 如果按下的时间达到了 3000 毫秒（3秒）
-      if ((st4e.timeDown() > 3000) && (st4w.timeDown() > 3000)) {
-        homingLockout = true; // 第一步：立刻上锁
-        soundBeep();          // 第二次蜂鸣提示音，代表触发回原点
-        
-        // 撤销在 2 秒时必然被触发的 AltModeA，防止赤道仪状态错乱
-        altModeA = false; 
-        
-        // 停止一切当前的追踪和导星动作
-        stopGuideAxis1();
-        stopGuideAxis2();
-        stopSlewingAndTracking(SS_ALL_FAST);
-        
-        // 触发回原点
-        goHome(true); 
-        return; 
-      }
-      // 注意：这里删除了提前 return 的拦截，让未满 3 秒的状态能继续往下走到 AltMode 逻辑
-    }
-  }
-  // =================================================================
-
-  // 停止因组合按键触发的常规导星
+  // stop any guide that might be triggered by combination button presses
   if (st4e.isDown() && st4w.isDown()) stopGuideAxis1(); 
   if (st4n.isDown() && st4s.isDown()) stopGuideAxis2();
   
-  // =================================================================
-  // AltMode 2秒组合键逻辑 (原版功能)
-  // =================================================================
+  // see if a combination was down for long enough for an alternate mode
+  static bool altModeA=false;
+  static bool altModeB=false;
   if ((trackingState != TrackingMoveTo) && (!waitingHome)) {
-    // 按满 2 秒时，触发 AltMode 并发出一声蜂鸣
-    if ((st4e.timeDown() > AltMode_ms) && (st4w.timeDown() > AltMode_ms) && (!altModeB)) { 
-      if (!altModeA) { altModeA=true; soundBeep(); } 
-    }
-    if ((st4n.timeDown() > AltMode_ms) && (st4s.timeDown() > AltMode_ms) && (!altModeA)) { 
-      if (!altModeB) { altModeB=true; soundBeep(); } 
-    }
+    if ((st4e.timeDown() > AltMode_ms) && (st4w.timeDown() > AltMode_ms) && (!altModeB)) { if (!altModeA) { altModeA=true; soundBeep(); } }
+    if ((st4n.timeDown() > AltMode_ms) && (st4s.timeDown() > AltMode_ms) && (!altModeA)) { if (!altModeB) { altModeB=true; soundBeep(); } }
   }
-
+  
   // if the alternate mode is allowed & selected & hasn't timed out, handle it
   if ( (altModeA || altModeB) && ((st4n.timeUp() < Shed_ms) || (st4s.timeUp() < Shed_ms) || (st4e.timeUp() < Shed_ms) || (st4w.timeUp() < Shed_ms)) ) {
 
@@ -614,11 +536,7 @@ void ST4() {
         if (newDirAxis1 != 'b') {
 #if ST4_HAND_CONTROL == ON
           if (waitingHome) waitingHomeContinue=true; else
-          if (trackingState == TrackingMoveTo) {
-            // ST4 中止 Goto 后只恢复 Goto 前的跟踪状态。
-            gotoStartTrackingOnSuccess=false;
-            if (!abortGoto) abortGoto=StartAbortGoto;
-          } else
+          if (trackingState == TrackingMoveTo) { if (!abortGoto) abortGoto=StartAbortGoto; } else
 #endif
             {
 #if SEPARATE_PULSE_GUIDE_RATE == ON && ST4_HAND_CONTROL != ON
@@ -641,11 +559,7 @@ void ST4() {
         if (newDirAxis2 != 'b') {
 #if ST4_HAND_CONTROL == ON
           if (waitingHome) waitingHomeContinue=true; else
-          if (trackingState == TrackingMoveTo) {
-            // ST4 中止 Goto 后只恢复 Goto 前的跟踪状态。
-            gotoStartTrackingOnSuccess=false;
-            if (!abortGoto) abortGoto=StartAbortGoto;
-          } else
+          if (trackingState == TrackingMoveTo) { if (!abortGoto) abortGoto=StartAbortGoto; } else
 #endif
           {
 #if SEPARATE_PULSE_GUIDE_RATE == ON && ST4_HAND_CONTROL != ON
