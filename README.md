@@ -9,7 +9,7 @@
 >
 > OnStep 原项目及核心固件由 **Howard Dutton** 开发和维护
 >
-> 本仓库中的自定义修改由 **Leo-John233 及项目贡献者**维护，具体修改内容和日期以 Git 提交历史为准
+> 本仓库中的自定义修改由 **项目贡献者**维护，具体修改内容和日期以 Git 提交历史为准
 
 > [!WARNING]
 > 本版本包含针对特定硬件的控制逻辑修改，不保证完全兼容所有 OnStep 支持的硬件
@@ -153,7 +153,7 @@ See [LICENSE.txt](./LICENSE.txt) for the complete license text.
 
 Custom modifications and maintenance:
 
-**Leo-John233 and project contributors**
+**Project Contributors**
 
 完整修改内容及修改日期请参阅本仓库 Git History
 
