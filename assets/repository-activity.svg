@@ -1,108 +1,100 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1120" height="278" viewBox="0 0 1120 278" preserveAspectRatio="xMinYMin meet" role="img">
 <style>
+.card{
+    fill:#ffffff;
+    stroke:#d0d7de;
+    stroke-width:1;
+}
 
-        .card {
-            fill: #ffffff;
-            stroke: #d0d7de;
-            stroke-width: 1;
-        }
+.text{
+    font-family:
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
+        Helvetica,
+        Arial,
+        sans-serif;
+}
 
-        .text {
-            font-family:
-                -apple-system,
-                BlinkMacSystemFont,
-                "Segoe UI",
-                Helvetica,
-                Arial,
-                sans-serif;
-        }
+.title{
+    fill:#24292f;
+    font-size:22px;
+    font-weight:400;
+}
 
-        .title {
-            fill: #24292f;
-            font-size: 22px;
-            font-weight: 400;
-        }
+.month,
+.weekday{
+    fill:#24292f;
+    font-size:14px;
+    font-weight:400;
+}
 
-        .month {
-            fill: #24292f;
-            font-size: 14px;
-            font-weight: 400;
-        }
+.footer{
+    fill:#57606a;
+    font-size:14px;
+    font-weight:400;
+}
 
-        .weekday {
-            fill: #24292f;
-            font-size: 14px;
-            font-weight: 400;
-        }
+.level-0{
+    fill:#ebedf0;
+    stroke:rgba(27,31,35,.06);
+    stroke-width:1;
+}
 
-        .footer {
-            fill: #57606a;
-            font-size: 14px;
-            font-weight: 400;
-        }
+.level-1{
+    fill:#9be9a8;
+}
 
-        .level-0 {
-            fill: #ebedf0;
-            stroke: rgba(27, 31, 35, 0.06);
-            stroke-width: 1;
-        }
+.level-2{
+    fill:#40c463;
+}
 
-        .level-1 {
-            fill: #9be9a8;
-        }
+.level-3{
+    fill:#30a14e;
+}
 
-        .level-2 {
-            fill: #40c463;
-        }
+.level-4{
+    fill:#216e39;
+}
 
-        .level-3 {
-            fill: #30a14e;
-        }
+@media(prefers-color-scheme:dark){
 
-        .level-4 {
-            fill: #216e39;
-        }
+    .card{
+        fill:#0d1117;
+        stroke:#30363d;
+    }
 
+    .title,
+    .month,
+    .weekday{
+        fill:#c9d1d9;
+    }
 
-        @media (prefers-color-scheme: dark) {
+    .footer{
+        fill:#8b949e;
+    }
 
-            .card {
-                fill: #0d1117;
-                stroke: #30363d;
-            }
+    .level-0{
+        fill:#161b22;
+        stroke:#1b1f23;
+    }
 
-            .title,
-            .month,
-            .weekday {
-                fill: #c9d1d9;
-            }
+    .level-1{
+        fill:#0e4429;
+    }
 
-            .footer {
-                fill: #8b949e;
-            }
+    .level-2{
+        fill:#006d32;
+    }
 
-            .level-0 {
-                fill: #161b22;
-                stroke: #1b1f23;
-            }
+    .level-3{
+        fill:#26a641;
+    }
 
-            .level-1 {
-                fill: #0e4429;
-            }
-
-            .level-2 {
-                fill: #006d32;
-            }
-
-            .level-3 {
-                fill: #26a641;
-            }
-
-            .level-4 {
-                fill: #39d353;
-            }
-        }
-        
+    .level-4{
+        fill:#39d353;
+    }
+}
 </style>
 <text class="text title" x="0" y="26">27 contributions in the last year</text>
 <rect class="card" x="0.5" y="44.5" width="1118" height="232" rx="6" ry="6"/>
