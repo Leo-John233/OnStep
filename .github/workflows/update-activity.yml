@@ -5,58 +5,66 @@ on:
     branches:
       - release-4.24
 
-    paths-ignore:
-      - README.md
-      - assets/repository-activity.svg
-      - assets/repository-statistics.svg
-
   workflow_dispatch:
 
+  # 即使近期没有新的 Commit，也每天刷新一次“最近 7 天”和年度贡献图
+  # GitHub Actions 的 cron 使用 UTC
+  # 00:15 UTC = Asia/Shanghai 08:15
+  schedule:
+    - cron: "15 0 * * *"
+
 concurrency:
-  group: repository-activity
+  group: repository-activity-pages
   cancel-in-progress: true
 
 permissions:
-  contents: write
+  contents: read
+  actions: read
+  pages: write
+  id-token: write
 
 jobs:
-  update-activity:
+
+  build:
+    name: Generate activity
     runs-on: ubuntu-latest
 
-    env:
-      ACTIVITY_TIMEZONE: Asia/Shanghai
-      TARGET_BRANCH: release-4.24
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+
+      - name: Checkout release-4.24
+        uses: actions/checkout@v6
         with:
           ref: release-4.24
           fetch-depth: 0
 
       - name: Generate repository activity
+        env:
+          ACTIVITY_TIMEZONE: Asia/Shanghai
         run: |
           python3 .github/scripts/update_activity.py
 
-      - name: Commit generated files
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
 
-          git add README.md
-          git add assets/repository-activity.svg
+      - name: Upload GitHub Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: site
 
-          if [ -f assets/repository-statistics.svg ]; then
-            git add assets/repository-statistics.svg
-          fi
 
-          if git diff --cached --quiet
-          then
-            echo "No changes"
-            exit 0
-          fi
+  deploy:
+    name: Deploy activity
+    runs-on: ubuntu-latest
 
-          git commit -m "docs: auto-update repository activity"
+    needs:
+      - build
 
-          git pull --rebase origin "$TARGET_BRANCH"
-          git push origin "$TARGET_BRANCH"
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
