@@ -1,0 +1,12 @@
+#!/bin/sh
+
+git diff --cached --check
+
+if [ $? -ne 0 ]; then
+    echo ""
+    echo "Commit blocked: whitespace errors detected."
+    echo "Please fix trailing spaces or whitespace errors before committing."
+    exit 1
+fi
+
+exit 0
