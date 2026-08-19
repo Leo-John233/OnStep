@@ -4,7 +4,7 @@ import html
 import os
 import subprocess
 from collections import Counter
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -15,19 +15,28 @@ from zoneinfo import ZoneInfo
 
 ROOT = Path(__file__).resolve().parents[2]
 
+# GitHub Pages 最终部署目录
 OUTPUT_DIR = ROOT / "site"
 
+# 自动生成的文件
 RECENT_SVG = OUTPUT_DIR / "recent-changes.svg"
 ACTIVITY_SVG = OUTPUT_DIR / "repository-activity.svg"
 STATISTICS_SVG = OUTPUT_DIR / "repository-statistics.svg"
 INDEX_HTML = OUTPUT_DIR / "index.html"
 
+# 最近代码修改统计天数
 RECENT_DAYS = 7
+
+# Contribution Graph 读取历史范围
 RECENT_HISTORY_DAYS = 370
 
+# 最近修改最多显示多少条
 MAX_RECENT_ROWS = 12
+
+# 完整历史贡献者最多显示多少名
 TOP_CONTRIBUTORS = 6
 
+# 时区
 TIMEZONE_NAME = os.getenv(
     "ACTIVITY_TIMEZONE",
     "Asia/Shanghai",
@@ -37,7 +46,7 @@ TZ = ZoneInfo(TIMEZONE_NAME)
 
 
 # ============================================================
-# 不参与“有效代码修改”统计的内容
+# 不参与“有效代码修改”统计的文件
 # ============================================================
 
 IGNORED_FILES = {
@@ -53,10 +62,12 @@ IGNORED_PREFIXES = (
     ".github/",
 )
 
+# 自动提交历史
 AUTO_COMMIT_MESSAGES = {
     "docs: auto-update repository activity",
 }
 
+# Bot 作者
 BOT_AUTHORS = {
     "github-actions[bot]",
 }
@@ -78,6 +89,10 @@ AUTHOR_ALIASES = {
 # ============================================================
 
 def git(*args: str) -> str:
+    """
+    执行 Git 命令并返回 UTF-8 文本结果。
+    """
+
     result = subprocess.run(
         [
             "git",
@@ -101,6 +116,10 @@ def git(*args: str) -> str:
 # ============================================================
 
 def canonical_author(author: str) -> str:
+    """
+    统一同一作者的不同 Git 名称。
+    """
+
     author = author.strip()
 
     return AUTHOR_ALIASES.get(
@@ -110,6 +129,10 @@ def canonical_author(author: str) -> str:
 
 
 def should_ignore_file(path: str) -> bool:
+    """
+    判断文件是否应该从“有效代码修改”统计中排除。
+    """
+
     if path in IGNORED_FILES:
         return True
 
@@ -120,6 +143,10 @@ def should_ignore_file(path: str) -> bool:
 
 
 def is_bot_commit(commit: dict) -> bool:
+    """
+    判断是否属于自动生成的机器人提交。
+    """
+
     author = canonical_author(
         commit["author"]
     )
@@ -137,6 +164,9 @@ def truncate(
     text: str,
     limit: int,
 ) -> str:
+    """
+    限制文本长度，避免 SVG 中列内容重叠。
+    """
 
     text = text.strip()
 
@@ -147,6 +177,10 @@ def truncate(
 
 
 def svg_text(text: str) -> str:
+    """
+    SVG/XML 文本转义。
+    """
+
     return html.escape(
         str(text),
         quote=True,
@@ -158,6 +192,16 @@ def svg_text(text: str) -> str:
 # ============================================================
 
 def parse_log(raw: str) -> list[dict]:
+    """
+    解析 git log 输出。
+
+    字段分隔符：
+        \\x1f
+
+    Commit 分隔符：
+        \\x1e
+    """
+
     commits: list[dict] = []
 
     for record in raw.split("\x1e"):
@@ -214,6 +258,11 @@ def parse_log(raw: str) -> list[dict]:
 def get_commit_files(
     sha: str,
 ) -> list[str]:
+    """
+    获取某次 Commit 实际修改的有效文件。
+
+    README、GitHub Actions、自生成 SVG 等内容不会计入。
+    """
 
     raw = git(
         "diff-tree",
@@ -243,12 +292,15 @@ def get_commit_files(
 
 
 # ============================================================
-# 文件范围
+# 文件修改范围
 # ============================================================
 
 def get_scope(
     path: str,
 ) -> str:
+    """
+    根据路径得到主要修改范围。
+    """
 
     path = path.replace(
         "\\",
@@ -260,6 +312,7 @@ def get_scope(
     if not parts:
         return "-"
 
+    # 原始固件/OnStepX/... -> OnStepX
     if (
         parts[0] == "原始固件"
         and len(parts) >= 2
@@ -272,10 +325,14 @@ def get_scope(
 def summarize_scope(
     files: list[str],
 ) -> str:
+    """
+    将一个 Commit 的多个文件压缩为简洁范围描述。
+    """
 
     if not files:
         return "-"
 
+    # 单文件直接显示路径
     if len(files) == 1:
 
         path = files[0].replace(
@@ -320,6 +377,17 @@ def summarize_scope(
 # ============================================================
 
 def load_recent_history() -> list[dict]:
+    """
+    读取最近约一年历史。
+
+    用于：
+    1. 最近 7 天代码修改
+    2. 最近一年 Contribution Graph
+
+    这里会逐 Commit 检查文件修改范围，
+    所以只处理约一年历史，避免对数千条历史重复 diff-tree。
+    """
+
     raw = git(
         "log",
         f"--since={RECENT_HISTORY_DAYS} days ago",
@@ -337,6 +405,7 @@ def load_recent_history() -> list[dict]:
 
     for commit in parse_log(raw):
 
+        # 排除自动机器人提交
         if is_bot_commit(commit):
             continue
 
@@ -344,6 +413,7 @@ def load_recent_history() -> list[dict]:
             commit["sha"]
         )
 
+        # 只修改 README / .github / SVG 等内容时不统计
         if not files:
             continue
 
@@ -366,6 +436,19 @@ def load_recent_history() -> list[dict]:
 # ============================================================
 
 def load_full_history() -> list[dict]:
+    """
+    读取当前分支全部可达 Git 历史。
+
+    用于：
+    - Total commits
+    - Contributors
+    - Repository history
+    - Top contributors
+
+    这里只执行一次 git log，
+    不会对 4000+ Commit 逐个执行 diff-tree。
+    """
+
     raw = git(
         "log",
         (
@@ -382,12 +465,15 @@ def load_full_history() -> list[dict]:
 
 
 # ============================================================
-# 最近 7 天
+# 最近 7 天提交
 # ============================================================
 
 def get_recent_commits(
     history: list[dict],
 ) -> list[dict]:
+    """
+    从有效代码历史中筛选最近 N 天。
+    """
 
     today = datetime.now(
         TZ
@@ -412,10 +498,10 @@ def get_recent_commits(
 
 
 # ============================================================
-# GitHub 通用 SVG 风格
+# 最近代码修改 SVG 样式
 # ============================================================
 
-COMMON_STYLE = """
+RECENT_STYLE = """
 .text {
     font-family:
         -apple-system,
@@ -434,38 +520,44 @@ COMMON_STYLE = """
 
 .title {
     fill: #24292f;
-    font-size: 22px;
+    font-size: 24px;
     font-weight: 400;
 }
 
 .header {
     fill: #57606a;
-    font-size: 13px;
+    font-size: 15px;
     font-weight: 600;
 }
 
 .normal {
     fill: #24292f;
-    font-size: 14px;
+    font-size: 16px;
     font-weight: 400;
 }
 
 .secondary {
     fill: #57606a;
-    font-size: 13px;
+    font-size: 15px;
     font-weight: 400;
 }
 
 .author {
     fill: #24292f;
-    font-size: 14px;
+    font-size: 16px;
     font-weight: 600;
 }
 
-.link {
+.commit-title {
+    fill: #0969da;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.commit-sha {
     fill: #0969da;
     font-size: 14px;
-    font-weight: 600;
+    font-weight: 400;
 }
 
 .divider {
@@ -491,7 +583,8 @@ COMMON_STYLE = """
         fill: #8b949e;
     }
 
-    .link {
+    .commit-title,
+    .commit-sha {
         fill: #58a6ff;
     }
 
@@ -509,6 +602,9 @@ COMMON_STYLE = """
 def generate_recent_svg(
     history: list[dict],
 ) -> None:
+    """
+    生成 GitHub 风格最近代码修改卡片。
+    """
 
     commits = get_recent_commits(
         history
@@ -523,14 +619,18 @@ def generate_recent_svg(
         len(commits) - len(visible),
     )
 
+    # --------------------------------------------------------
+    # 整体尺寸
+    # --------------------------------------------------------
+
     width = 1120
 
-    title_y = 26
-    card_y = 44
+    title_y = 29
+    card_y = 50
 
-    header_height = 42
-    row_height = 40
-    footer_height = 42
+    header_height = 46
+    row_height = 46
+    footer_height = 46
 
     rows = max(
         1,
@@ -549,6 +649,15 @@ def generate_recent_svg(
         + 1
     )
 
+    # --------------------------------------------------------
+    # 四列位置
+    # --------------------------------------------------------
+
+    date_x = 30
+    author_x = 122
+    subject_x = 300
+    scope_x = 900
+
     svg: list[str] = [
         (
             '<svg '
@@ -560,7 +669,7 @@ def generate_recent_svg(
             'role="img">'
         ),
         "<style>",
-        COMMON_STYLE,
+        RECENT_STYLE,
         "</style>",
         (
             '<text '
@@ -583,38 +692,51 @@ def generate_recent_svg(
         ),
     ]
 
+    # --------------------------------------------------------
+    # 表头
+    # --------------------------------------------------------
+
     header_y = (
-        card_y + 27
+        card_y + 30
     )
 
     svg.extend(
         [
             (
-                '<text class="text header" '
-                f'x="28" y="{header_y}">'
+                '<text '
+                'class="text header" '
+                f'x="{date_x}" '
+                f'y="{header_y}">'
                 "日期"
                 "</text>"
             ),
             (
-                '<text class="text header" '
-                f'x="120" y="{header_y}">'
+                '<text '
+                'class="text header" '
+                f'x="{author_x}" '
+                f'y="{header_y}">'
                 "修改者"
                 "</text>"
             ),
             (
-                '<text class="text header" '
-                f'x="300" y="{header_y}">'
+                '<text '
+                'class="text header" '
+                f'x="{subject_x}" '
+                f'y="{header_y}">'
                 "修改内容"
                 "</text>"
             ),
             (
-                '<text class="text header" '
-                f'x="900" y="{header_y}">'
+                '<text '
+                'class="text header" '
+                f'x="{scope_x}" '
+                f'y="{header_y}">'
                 "范围"
                 "</text>"
             ),
             (
-                '<line class="divider" '
+                '<line '
+                'class="divider" '
                 'x1="0" '
                 f'y1="{card_y + header_height}" '
                 'x2="1119" '
@@ -626,6 +748,10 @@ def generate_recent_svg(
     rows_top = (
         card_y + header_height
     )
+
+    # --------------------------------------------------------
+    # 提交数据
+    # --------------------------------------------------------
 
     if visible:
 
@@ -639,7 +765,7 @@ def generate_recent_svg(
             )
 
             baseline = (
-                row_top + 26
+                row_top + 30
             )
 
             commit_date = commit[
@@ -653,22 +779,18 @@ def generate_recent_svg(
 
             author = truncate(
                 commit["author"],
-                20,
+                19,
             )
 
+            # 字号增大以后适当限制标题长度
             subject = truncate(
                 commit["subject"],
-                60,
-            )
-
-            subject_text = (
-                f"{subject}  "
-                f"{commit['short_sha']}"
+                48,
             )
 
             scope = truncate(
                 commit["scope"],
-                24,
+                20,
             )
 
             if (
@@ -682,33 +804,59 @@ def generate_recent_svg(
 
             svg.extend(
                 [
+                    # 日期
                     (
-                        '<text class="text normal" '
-                        f'x="28" y="{baseline}">'
+                        '<text '
+                        'class="text normal" '
+                        f'x="{date_x}" '
+                        f'y="{baseline}">'
                         f"{svg_text(date_text)}"
                         "</text>"
                     ),
+
+                    # 修改者
                     (
-                        '<text class="text author" '
-                        f'x="120" y="{baseline}">'
+                        '<text '
+                        'class="text author" '
+                        f'x="{author_x}" '
+                        f'y="{baseline}">'
                         f"{svg_text(author)}"
                         "</text>"
                     ),
+
+                    # Commit 标题
                     (
-                        '<text class="text link" '
-                        f'x="300" y="{baseline}">'
-                        f"{svg_text(subject_text)}"
+                        '<text '
+                        'class="text commit-title" '
+                        f'x="{subject_x}" '
+                        f'y="{baseline}">'
+                        f"{svg_text(subject)}"
                         "</text>"
                     ),
+
+                    # Commit SHA
                     (
-                        '<text class="text secondary" '
-                        f'x="900" y="{baseline}">'
+                        '<text '
+                        'class="text commit-sha" '
+                        f'x="{subject_x + 510}" '
+                        f'y="{baseline}">'
+                        f"{svg_text(commit['short_sha'])}"
+                        "</text>"
+                    ),
+
+                    # 修改范围
+                    (
+                        '<text '
+                        'class="text secondary" '
+                        f'x="{scope_x}" '
+                        f'y="{baseline}">'
                         f"{svg_text(scope)}"
                         "</text>"
                     ),
                 ]
             )
 
+            # 每行分隔线
             if index < len(visible) - 1:
 
                 line_y = (
@@ -718,8 +866,9 @@ def generate_recent_svg(
 
                 svg.append(
                     (
-                        '<line class="divider" '
-                        'x1="28" '
+                        '<line '
+                        'class="divider" '
+                        'x1="30" '
                         f'y1="{line_y}" '
                         'x2="1090" '
                         f'y2="{line_y}"/>'
@@ -730,13 +879,18 @@ def generate_recent_svg(
 
         svg.append(
             (
-                '<text class="text secondary" '
-                'x="28" '
-                f'y="{rows_top + 26}">'
-                "最近 7 天暂无代码提交"
+                '<text '
+                'class="text secondary" '
+                f'x="{date_x}" '
+                f'y="{rows_top + 30}">'
+                f"最近 {RECENT_DAYS} 天暂无代码提交"
                 "</text>"
             )
         )
+
+    # --------------------------------------------------------
+    # Footer
+    # --------------------------------------------------------
 
     footer_y = (
         rows_top
@@ -745,7 +899,8 @@ def generate_recent_svg(
 
     svg.append(
         (
-            '<line class="divider" '
+            '<line '
+            'class="divider" '
             'x1="0" '
             f'y1="{footer_y}" '
             'x2="1119" '
@@ -768,9 +923,10 @@ def generate_recent_svg(
 
     svg.append(
         (
-            '<text class="text secondary" '
-            'x="28" '
-            f'y="{footer_y + 27}">'
+            '<text '
+            'class="text secondary" '
+            'x="30" '
+            f'y="{footer_y + 30}">'
             f"{svg_text(footer_text)}"
             "</text>"
         )
@@ -787,12 +943,15 @@ def generate_recent_svg(
 
 
 # ============================================================
-# Contribution Graph
+# Contribution Graph 数据
 # ============================================================
 
 def contribution_counts(
     history: list[dict],
 ) -> Counter:
+    """
+    统计最近一年每天有效代码提交数量。
+    """
 
     today = datetime.now(
         TZ
@@ -822,6 +981,9 @@ def contribution_counts(
 def contribution_level(
     count: int,
 ) -> int:
+    """
+    将 Commit 数量转换为 GitHub 风格绿色等级。
+    """
 
     if count == 0:
         return 0
@@ -837,6 +999,10 @@ def contribution_level(
 
     return 4
 
+
+# ============================================================
+# GitHub Contribution Graph 样式
+# ============================================================
 
 ACTIVITY_STYLE = """
 .card {
@@ -937,9 +1103,16 @@ ACTIVITY_STYLE = """
 """
 
 
+# ============================================================
+# GitHub Contribution Graph
+# ============================================================
+
 def generate_activity_svg(
     history: list[dict],
 ) -> None:
+    """
+    生成最近一年 GitHub 风格 Contribution Graph。
+    """
 
     counts = contribution_counts(
         history
@@ -973,8 +1146,13 @@ def generate_activity_svg(
     grid_top = 94
 
     month_y = 84
+
     footer_y = 253
     legend_x = 872
+
+    # --------------------------------------------------------
+    # 找到年度网格最前面的星期日
+    # --------------------------------------------------------
 
     offset_to_sunday = (
         first_day.weekday() + 1
@@ -1024,6 +1202,10 @@ def generate_activity_svg(
         ),
     ]
 
+    # --------------------------------------------------------
+    # 月份
+    # --------------------------------------------------------
+
     previous_month = None
     previous_x = -100
 
@@ -1047,6 +1229,7 @@ def generate_activity_svg(
             + week * step
         )
 
+        # 防止月份名称距离太近
         if (
             x - previous_x
             < 45
@@ -1069,6 +1252,10 @@ def generate_activity_svg(
                 "</text>"
             )
         )
+
+    # --------------------------------------------------------
+    # 星期
+    # --------------------------------------------------------
 
     weekday_labels = {
         1: "Mon",
@@ -1097,6 +1284,10 @@ def generate_activity_svg(
             )
         )
 
+    # --------------------------------------------------------
+    # Contribution 方格
+    # --------------------------------------------------------
+
     for offset in range(
         grid_days
     ):
@@ -1119,6 +1310,7 @@ def generate_activity_svg(
         if week >= 53:
             continue
 
+        # Sunday = 0
         row = (
             current.weekday() + 1
         ) % 7
@@ -1163,6 +1355,10 @@ def generate_activity_svg(
             )
         )
 
+    # --------------------------------------------------------
+    # Footer
+    # --------------------------------------------------------
+
     svg.append(
         (
             '<text '
@@ -1184,6 +1380,10 @@ def generate_activity_svg(
             "</text>"
         )
     )
+
+    # --------------------------------------------------------
+    # Less -> More
+    # --------------------------------------------------------
 
     for index in range(5):
 
@@ -1228,7 +1428,7 @@ def generate_activity_svg(
 
 
 # ============================================================
-# Repository Statistics
+# Repository Statistics 样式
 # ============================================================
 
 STATISTICS_STYLE = """
@@ -1325,9 +1525,16 @@ STATISTICS_STYLE = """
 """
 
 
+# ============================================================
+# Repository Statistics 数据
+# ============================================================
+
 def repository_statistics(
     full_history: list[dict],
 ) -> dict:
+    """
+    基于完整当前分支 Git 历史统计仓库数据。
+    """
 
     clean_history = [
         commit
@@ -1378,9 +1585,16 @@ def repository_statistics(
     }
 
 
+# ============================================================
+# Repository Statistics SVG
+# ============================================================
+
 def generate_statistics_svg(
     full_history: list[dict],
 ) -> None:
+    """
+    生成完整仓库历史统计卡片。
+    """
 
     stats = repository_statistics(
         full_history
@@ -1391,6 +1605,7 @@ def generate_statistics_svg(
     width = 1120
 
     card_y = 44
+
     metric_height = 92
     contributors_title_height = 48
     row_height = 42
@@ -1482,6 +1697,10 @@ def generate_statistics_svg(
         ),
     ]
 
+    # --------------------------------------------------------
+    # 顶部三个统计指标
+    # --------------------------------------------------------
+
     metric_centers = [
         186,
         560,
@@ -1522,6 +1741,7 @@ def generate_statistics_svg(
             ]
         )
 
+    # 顶部指标分隔线
     for x in (
         373,
         747,
@@ -1537,6 +1757,10 @@ def generate_statistics_svg(
                 f'y2="{card_y + 74}"/>'
             )
         )
+
+    # --------------------------------------------------------
+    # Contributors
+    # --------------------------------------------------------
 
     svg.append(
         (
@@ -1579,11 +1803,13 @@ def generate_statistics_svg(
                 row_top + 27
             )
 
-            commit_text = (
-                "1 commit"
-                if count == 1
-                else f"{count:,} commits"
-            )
+            if count == 1:
+                commit_text = "1 commit"
+
+            else:
+                commit_text = (
+                    f"{count:,} commits"
+                )
 
             svg.extend(
                 [
@@ -1637,6 +1863,10 @@ def generate_statistics_svg(
                 "</text>"
             )
         )
+
+    # --------------------------------------------------------
+    # Footer
+    # --------------------------------------------------------
 
     svg.append(
         (
@@ -1692,6 +1922,12 @@ def generate_statistics_svg(
 # ============================================================
 
 def generate_index_html() -> None:
+    """
+    生成 Pages 首页。
+
+    README 实际直接引用三个 SVG，
+    此页面主要用于直接访问 GitHub Pages 时展示完整统计。
+    """
 
     repository = os.getenv(
         "GITHUB_REPOSITORY",
@@ -1707,8 +1943,12 @@ def generate_index_html() -> None:
 <html lang="zh-CN">
 
 <head>
+
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+
+<meta
+    name="viewport"
+    content="width=device-width, initial-scale=1">
 
 <title>OnStep Repository Activity</title>
 
@@ -1719,6 +1959,7 @@ body {
     padding: 32px;
     background: #ffffff;
     color: #24292f;
+
     font-family:
         -apple-system,
         BlinkMacSystemFont,
@@ -1737,7 +1978,7 @@ img {
     display: block;
     width: 100%;
     height: auto;
-    margin-bottom: 28px;
+    margin-bottom: 30px;
 }
 
 a {
@@ -1751,8 +1992,10 @@ a:hover {
 
 .footer {
     margin-top: 24px;
+    margin-bottom: 32px;
+
     color: #57606a;
-    font-size: 14px;
+    font-size: 15px;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -1792,9 +2035,11 @@ a:hover {
     alt="Repository Statistics">
 
 <div class="footer">
+
 <a href="__REPOSITORY_URL__">
 返回 GitHub Repository
 </a>
+
 </div>
 
 </main>
@@ -1814,6 +2059,7 @@ a:hover {
         encoding="utf-8",
     )
 
+    # 禁用 Jekyll
     (
         OUTPUT_DIR / ".nojekyll"
     ).write_text(
@@ -1827,6 +2073,9 @@ a:hover {
 # ============================================================
 
 def main() -> None:
+    """
+    主流程。
+    """
 
     OUTPUT_DIR.mkdir(
         parents=True,
