@@ -1,63 +1,83 @@
 /*
- * Title       OnStep
- * by          Howard Dutton
+ * 标题          OnStep
+ * 作者          Howard Dutton
  *
- * Copyright (C) 2012 to 2021 Howard Dutton
+ * 版权所有 (C) 2012 至 2021 Howard Dutton
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * 本程序为自由软件：您可以根据自由软件基金会发布的 GNU 通用公共许可证（GNU GPL）
+ * 的条款重新分发和/或修改它，无论是许可证的第 3 版，还是（由您选择）任何更高版本
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * 本程序的发布是希望它能有用，但【没有任何担保】；
+ * 甚至没有对【适销性】或【特定用途适用性】的暗示性担保
+ * 有关更多详细信息，请参阅 GNU 通用公共许可证
  *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ * 您应该随本程序一起收到了一份 GNU 通用公共许可证的副本
+ * 如果没有，请参阅 <http://www.gnu.org/licenses/>
  *
- * Description:
- *   Full featured stepper motor telescope microcontroller for Equatorial and
- *   Alt-Azimuth mounts, with the LX200 derived command set.
+ * 描述:
+ * 功能齐全的步进电机望远镜微控制器，适用于赤道仪和经纬仪支架，
+ * 采用衍生自 LX200 的指令集
  *
- * Author: Howard Dutton
- *   http://www.stellarjourney.com
- *   hjd1964@gmail.com
+ * 作者: Howard Dutton
+ * http://www.stellarjourney.com
+ * hjd1964@gmail.com
  *
- * Revision history, and newer versions:
- *   See GitHub: https://github.com/hjd1964/OnStep
+ * 修订历史和更新版本:
+ * 请参阅 GitHub: https://github.com/hjd1964/OnStep
  *
- * Documentation:
- *   https://groups.io/g/onstep/wiki/home
+ * 文档:
+ * https://groups.io/g/onstep/wiki/home
  *
- * Discussion, Questions, ...etc
- *   https://groups.io/g/onstep
+ * 讨论、提问等:
+ * https://groups.io/g/onstep
  */
 
-// Use Config.h to configure OnStep to your requirements
+// 请使用 Config.h 文件根据您的需求来配置 OnStep
+// 固件信息，这些信息由 ":GV?#" 命令返回
 
-// firmware info, these are returned by the ":GV?#" commands
 #define FirmwareDate          __DATE__
 #define FirmwareVersionMajor  4
-#define FirmwareVersionMinor  24      // minor version 0 to 99
-#define FirmwareVersionPatch  "s"     // for example major.minor patch: 1.3c
-#define FirmwareVersionConfig 3       // internal, for tracking configuration file changes
+#define FirmwareVersionMinor  24      // 次版本号 0 到 99
+#define FirmwareVersionPatch  "s"     // 补丁版本，例如主.次 补丁: 1.3c
+#define FirmwareVersionConfig 3       // 内部使用，用于跟踪配置文件更改
 #define FirmwareName          "On-Step"
 #define FirmwareTime          __TIME__
 
 #include "Constants.h"
 
-// On first upload OnStep automatically initializes a host of settings in nv memory (EEPROM.)
-// This option forces that initialization again.
-// Change to ON, upload OnStep and nv will be reset to default. Wait about 30 seconds then set to OFF and upload again.
-// *** IMPORTANT: This option must not be left set to true or it will cause excessive wear of EEPROM or FLASH ***
+// --- 限位锁死状态变量 ---
+// 0=无锁死, 1=正向锁死(如East/North), -1=反向锁死(如West/South)
+int Axis1_LimitLock = 0;
+int Axis2_LimitLock = 0;
+unsigned long lastLimitTriggerTime = 0; // 用于非阻塞消抖计时
+// GOTO 安全中断分类该状态与 HOME_SENSE / LIMIT_SENSE 的编译配置无关
+// 避免关闭传感器后安全中断被误判为正常 GOTO 完成
+enum GotoAbortState { GOTO_ABORT_NONE, GOTO_ABORT_STOPPED, GOTO_ABORT_HARD_STOP, GOTO_ABORT_POSITION_LOST };
+GotoAbortState gotoAbortState = GOTO_ABORT_NONE;
+
+// Only a normal celestial GOTO may request sidereal tracking on successful arrival.
+bool gotoStartTrackingOnSuccess = false;
+
+// 当前步数坐标是否仍可作为真实机械位置使用
+// 标准 OnStep 启动假定赤道仪位于已知起始位置；HOME_REQUIRED_ON_BOOT 可要求先回零确认
+bool mountPositionTrusted = true;
+
+// 物理限位、驱动器故障或失败的传感器回零会置位
+// HOME_SENSE 开启时可通过自动回零恢复；HOME_SENSE 关闭时可在人工放回零位后执行 Set Home 恢复
+bool positionRecoveryRequired = false;
+
+// 首次上传时，OnStep 会自动初始化 nv 存储器（EEPROM）中的一系列设置
+// 此选项会强制再次进行初始化
+// 将其改为 ON，上传 OnStep，nv 将被重置为默认值
+// 等待约 30 秒后，将其设置为 OFF 并再次上传
+// *** 重要提示：此选项不得一直设置为 true (ON)，否则会导致 EEPROM 或 FLASH 过度损耗 ***
 #define NV_FACTORY_RESET OFF
 
-// Enable additional debugging and/or status messages on the specified DebugSer port
-// Note that the DebugSer port cannot be used for normal communication with OnStep
-#define DEBUG OFF             // default=OFF, use "DEBUG ON" for background errors only, use "DEBUG VERBOSE" for all errors and status messages
-#define DebugSer SerialA      // default=SerialA, or Serial4 for example (always 9600 baud)
+// 在指定的 DebugSer 端口上启用额外的调试和/或状态消息
+// 请注意，DebugSer 端口不能用于与 OnStep 的正常通信（如控制望远镜）
+#define DEBUG OFF             // 默认=OFF使用 "DEBUG ON" 仅显示后台错误，
+                              // 使用 "DEBUG VERBOSE" 显示所有错误和状态消息
+#define DebugSer SerialA      // 默认=SerialA，或者例如 Serial4（始终为 9600 波特率）
 
 #include <errno.h>
 #include <math.h>
@@ -68,7 +88,7 @@
 #include "src/HAL/HAL.h"
 #include "Validate.h"
 
-// Helper macros for debugging, with less typing
+// 用于调试的辅助宏，减少打字量
 #if DEBUG != OFF
   #define D(x)       DebugSer.print(x)
   #define DF(x)      DebugSer.print(F(x))
@@ -108,7 +128,6 @@
 #include "src/lib/TLS.h"
 #include "src/lib/Weather.h"
 weather ambient;
-
 #if SERIAL_B_ESP_FLASHING == ON || defined(AddonTriggerPin)
   #include "src/lib/flashAddon.h"
   flashAddon fa;
@@ -141,7 +160,7 @@ weather ambient;
   #endif
 #endif
 
-// support for TMC2130, TMC5160, etc. stepper drivers in SPI mode
+// 支持 SPI 模式下的 TMC2130、TMC5160 等步进电机驱动器
 #if (AXIS1_DRIVER_MODEL == TMC_SPI && AXIS2_DRIVER_MODEL == TMC_SPI) || \
     (ROTATOR == ON && AXIS3_DRIVER_MODEL == TMC_SPI) || \
     (FOCUSER1 == ON && AXIS4_DRIVER_MODEL == TMC_SPI) || \
@@ -165,36 +184,68 @@ weather ambient;
   #endif
 #endif
 
+// 恢复状态与原版运动状态解耦：可信且无需恢复=正常；可信但需恢复=仅允许坐标回零；
+// 不可信且需恢复=必须通过传感器 Home 或 Set Home 重建位置基准
+void clearPhysicalLimitState() {
+  Axis1_LimitLock = 0;
+  Axis2_LimitLock = 0;
+}
+
+bool positionReady() {
+  return mountPositionTrusted && !positionRecoveryRequired;
+}
+
+bool positionHomeReturnOnly() {
+  return mountPositionTrusted && positionRecoveryRequired;
+}
+
+void requireCoordinateHomeRecovery() {
+  mountPositionTrusted = true;
+  positionRecoveryRequired = true;
+  gotoStartTrackingOnSuccess = false;
+}
+
+void invalidatePositionReference() {
+  mountPositionTrusted = false;
+  positionRecoveryRequired = true;
+  gotoStartTrackingOnSuccess = false;
+}
+
+void completePositionRecovery() {
+  mountPositionTrusted = true;
+  positionRecoveryRequired = false;
+  gotoAbortState = GOTO_ABORT_NONE;
+  gotoStartTrackingOnSuccess = false;
+  clearPhysicalLimitState();
+}
+
 void setup() {
   initPre();
-
-  // initialize the ESP8266 Addon flasher
+  // 初始化 ESP8266 插件（Addon）烧录器
 #if SERIAL_B_ESP_FLASHING == ON
   fa.init(-1,AddonResetPin,AddonBootModePin);
 #elif defined(AddonTriggerPin)
   fa.init(AddonTriggerPin,AddonResetPin,AddonBootModePin);
 #endif
 
-  // take a half-second to let any connected devices come up before we start setting up pins
-  delay(500);
-
+  // 等待半秒钟，让所有连接的设备启动完毕，然后再开始设置引脚
+  delay(10);//[修改] 缩短等待时间，原始值500
 #if DEBUG != OFF
-  // initialize USB serial debugging early, so we can use DebugSer.print() for debugging, if needed
-  DebugSer.begin(9600); delay(5000); DebugSer.flush(); VLF(""); VLF("");
+  // 提前初始化 USB 串口调试，以便在需要时可以使用 DebugSer.print() 进行调试
+  DebugSer.begin(9600);
+  delay(5000); DebugSer.flush(); VLF(""); VLF("");
 #endif
 
-  // say hello
+  // 打印欢迎信息/版本号
   VF("MSG: OnStep "); V(FirmwareVersionMajor); V("."); V(FirmwareVersionMinor); VL(FirmwareVersionPatch);
   VF("MSG: MCU =  "); VF(MCU_STR); V(", "); VF("Pinmap = "); VLF(PINMAP_STR);
-
-  // call hardware specific initialization
+  // 调用硬件特定初始化
   VLF("MSG: Init HAL");
   HAL_Initialize();
 
   VLF("MSG: Init serial");
-
-  // take a half-second to let the serial buffer empty before possibly restarting the debug port
-  delay(500);
+  // 等待半秒钟，让串口缓冲区清空，然后再可能需要重启调试端口
+  delay(10);// [修改2] 缩短串口缓冲等待，原始值500
   SerialA.begin(SERIAL_A_BAUD_DEFAULT);
 #ifdef HAL_SERIAL_B_ENABLED
   #ifdef SERIAL_B_RX
@@ -227,18 +278,16 @@ void setup() {
   SerialST4.begin();
 #endif
 
-  // take another two seconds to be sure Serial ports are online
-  delay(2000);
-
-  // set pins for input/output as specified in Config.h and PinMap.h
+  // 再等待两秒钟，以确保串口完全上线
+  delay(100);// [修改3] 缩短串口上线等待 (从2000改到100，兼容SPI初始化时间)，原始值2000
+  // 根据 Config.h 和 PinMap.h 中的定义设置输入/输出引脚
   VLF("MSG: Init pins");
   initPins();
 
-  // get the TLS ready (if present)
+  // 准备好 TLS（时间地点源）（如果存在）
   VLF("MSG: Init TLS");
   if (!tls.init()) generalError=ERR_SITE_INIT;
-  
-  // Check the Non-Volatile Memory
+  // 检查非易失性存储器 (NV Memory)
   VF("MSG: Start NV ");
   if (!nv.init()) {
     VLF("");
@@ -250,91 +299,85 @@ void setup() {
       #endif
     }
   }
-  V(E2END+1); VLF(" Bytes");
+  V(E2END+1);
+  VLF(" Bytes");
 
-  // if this is the first startup set EEPROM to defaults
+  // 如果是首次启动，则将 EEPROM 设置为默认值
   initWriteNvValues();
-
-  // now read any saved values from EEPROM into variables to restore our last state
+  // 现在从 EEPROM 中读取已保存的值到变量中，以恢复我们之前的状态
   VLF("MSG: Read NV settings");
   initReadNvValues();
 
-  // set initial values for some variables
+  // 设置某些变量的初始值
   VLF("MSG: Init startup settings");
   initStartupValues();
   initStartPosition();
-
-  // initialize the Object Library
+  // 初始化天体对象库 (Object Library)
   VLF("MSG: Init library/catalogs");
   Lib.init();
-
-  // get guiding ready
+  // 准备好导星功能
   VLF("MSG: Init guiding");
   initGuide();
- 
-  // get weather monitoring ready to go
+  // 准备好天气监测设备
 #ifdef ONEWIRE_DEVICES_PRESENT
   VLF("MSG: Init weather and 1-Wire");
 #else
   VLF("MSG: Init weather");
 #endif
   if (!ambient.init() && WEATHER_SUPRESS_ERRORS == OFF) generalError=ERR_WEATHER_INIT;
-
-  // setup features
+  // 设置辅助功能
 #ifdef FEATURES_PRESENT
   VLF("MSG: Init auxiliary features");
   featuresInit();
 #endif
 
-  // this sets up the sidereal timer and tracking rates
+  // 这会设置恒星时计时器和跟踪速率
   VLF("MSG: Init sidereal timer");
-  siderealInterval=nv.readLong(EE_siderealInterval); // the number of 16MHz clocks in one sidereal second (this is scaled to actual processor speed)
-  if (siderealInterval < 14360682L || siderealInterval > 17551944L) { DF("ERR, setup(): bad NV siderealInterval ("); D(siderealInterval); DL(")"); siderealInterval=masterSiderealInterval; }
+  siderealInterval=nv.readLong(EE_siderealInterval); // 一个恒星秒内的 16MHz 时钟数（这是根据实际处理器速度缩放的）
+  if (siderealInterval < 14360682L || siderealInterval > 17551944L) { DF("ERR, setup(): bad NV siderealInterval ("); D(siderealInterval); DL(")");
+  siderealInterval=masterSiderealInterval; }
   siderealRate=siderealInterval/stepsPerSecondAxis1;
   timerRateAxis1=siderealRate;
   timerRateAxis2=siderealRate;
 
-  // backlash takeup rates
+  // 设置反向间隙补偿（Backlash）速率
   backlashTakeupRate=siderealRate/TRACK_BACKLASH_RATE;
   timerRateBacklashAxis1=siderealRate/TRACK_BACKLASH_RATE;
   timerRateBacklashAxis2=(siderealRate/TRACK_BACKLASH_RATE)*timerRateRatio;
-
-  // setup the stepper driver modes
+  // 设置步进电机驱动模式
   VLF("MSG: Init motor timers");
   StepperModeTrackingInit();
-
-  // starts the hardware timers that keep sidereal time, move the motors, etc.
+  // 启动保持恒星时、驱动电机等的硬件定时器
   setTrackingRate(DefaultTrackingRate);
   setDeltaTrackingRate();
   initStartTimers();
- 
-  // tracking autostart
+  // 跟踪自动启动逻辑
+// 跟踪自动启动逻辑：只负责真正的 tracking autostart
 #if TRACK_AUTOSTART == ON
   #if MOUNT_TYPE != ALTAZM
 
-    // tailor behavior depending on TLS presence
     if (!tls.active) {
       VLF("MSG: Tracking autostart - TLS/orientation unknown, limits disabled");
       setHome();
-      safetyLimitsOn=false;
+      safetyLimitsOn = false;
     } else {
       if (parkStatus != Parked) {
         VLF("MSG: Tracking autostart - TLS/orientation unknown, limits disabled");
         setHome();
-        safetyLimitsOn=false;
+        safetyLimitsOn = false;
       } else {
-        // parking implies the orientation of the mount and the location are known
         VLF("MSG: Tracking autostart - assuming TLS/orientation are correct, limits enabled and automatic unpark");
         unPark(true);
       }
     }
 
-    // start tracking
-    trackingState=TrackingSidereal;
+    trackingState = TrackingSidereal;
     enableStepperDrivers();
+
   #else
     #warning "Tracking autostart ignored for MOUNT_TYPE ALTAZM"
   #endif
+
 #else
   if (parkStatus == Parked) {
     VLF("MSG: Restoring parked telescope pointing state");
@@ -342,7 +385,41 @@ void setup() {
   }
 #endif
 
-  // start rotator if present
+
+// 独立的开机回零策略
+#if HOME_REQUIRED_ON_BOOT == ON
+  #if MOUNT_TYPE != ALTAZM
+    VLF("MSG: Home/Set Home required before GOTO/tracking");
+    #if HOME_SENSE == OFF
+      // 启动步数仍描述 Home，但客户端必须显式执行/确认回零
+      requireCoordinateHomeRecovery();
+    #else
+      invalidatePositionReference();
+    #endif
+    gotoAbortState = GOTO_ABORT_NONE;
+    trackingState = TrackingNone;
+    lastTrackingState = TrackingNone;
+    abortTrackingState = TrackingNone;
+    safetyLimitsOn = false;
+  #endif
+#endif
+
+#if MOTOR_HOLD_ON_BOOT == ON
+  #if MOUNT_TYPE != ALTAZM
+
+    VLF("MSG: Motor hold on boot - drivers enabled");
+
+    // 电机使能，但不发跟踪脉冲
+    enableStepperDrivers();
+
+    // 使用 tracking 微步/电流保持，不切 GOTO 模式
+    axis1DriverTrackingMode(false);
+    axis2DriverTrackingMode(false);
+
+  #endif
+#endif
+
+  // 如果存在，则启动旋转器 (Rotator)
 #if ROTATOR == ON
   VLF("MSG: Init rotator");
   rot.init(Axis3_STEP,Axis3_DIR,Axis3_EN,EE_rotBaseAxis3,AXIS3_STEP_RATE_MAX,axis3Settings.stepsPerMeasure,axis3Settings.min,axis3Settings.max);
@@ -358,7 +435,7 @@ void setup() {
   rot.powerDownActive(AXIS3_DRIVER_POWER_DOWN == ON);
 #endif
 
-  // start focusers if present
+  // 如果存在，则启动调焦器 (Focusers)
 #if FOCUSER1 == ON
   VLF("MSG: Init focuser1");
   foc1.init(Axis4_STEP,Axis4_DIR,Axis4_EN,EE_focBaseAxis4,AXIS4_STEP_RATE_MAX,axis4Settings.stepsPerMeasure,axis4Settings.min*1000.0,axis4Settings.max*1000.0,AXIS4_LIMIT_MIN_RATE);
@@ -391,9 +468,9 @@ void setup() {
   foc2.powerDownActive(AXIS5_DRIVER_POWER_DOWN == ON, AXIS5_DRIVER_POWER_DOWN == STARTUP);
 #endif
 
-  // finally clear the comms channels
+  // 最后清除通信通道
   VLF("MSG: Serial buffer flush");
-  delay(500);
+  delay(10);// [修改4] 缩短最后的缓冲清除等待，原始值500
   SerialA.flush();
   while (SerialA.available()) SerialA.read();
 #ifdef HAL_SERIAL_B_ENABLED
@@ -413,30 +490,44 @@ void setup() {
   while (SerialE.available()) SerialE.read();
 #endif
   delay(500);
-
-  // prep counters (for keeping time in main loop)
+  // 准备计数器（用于在主循环中计时）
   cli(); siderealTimer=lst; guideSiderealTimer=lst; pecSiderealTimer=lst; sei();
   last_loop_micros=micros();
-
   VLF("MSG: OnStep is ready"); VL("");
 }
 
 void loop() {
   loop2();
-  Align.model(0); // GTA compute pointing model, this will call loop2() during extended processing
+  Align.model(0);
+  // GTA 计算指向模型，这将在扩展处理期间调用 loop2()
 }
 
 void loop2() {
-  // GUIDING -------------------------------------------------------------------------------------------
+#if HOME_SENSE != OFF
+  // =========================================================
+  // 监听自动回原点 (Homing) 状态
+  // =========================================================
+  static bool wasHoming = false;
+  if (isHoming()) {
+      wasHoming = true; // 系统正在回原点
+  } else if (wasHoming) {
+      // 不在主循环里直接把 mountPositionTrusted 置 true
+      // 真实自动回零成功只由 Home.ino 的 FH_DONE 阶段确认，避免回零失败也误解锁
+      wasHoming = false;
+  }
+  // =========================================================
+#endif
+
+  // 导星 (GUIDING) 
   ST4();
   if ((trackingState != TrackingMoveTo) && (parkStatus == NotParked)) guide();
 
 #if HOME_SENSE != OFF
-  // AUTOMATIC HOMING ----------------------------------------------------------------------------------
+  // 自动回原点 (AUTOMATIC HOMING) 
   checkHome();
 #endif
 
-  // 1/100 SECOND TIMED --------------------------------------------------------------------------------
+  // 1/100 秒定时任务 
   cli(); long lstNow=lst; sei();
   if (lstNow != siderealTimer) {
     siderealTimer=lstNow;
@@ -446,25 +537,29 @@ void loop2() {
 #endif
     
 #if AXIS1_PEC == ON
-    // PERIODIC ERROR CORRECTION
+    // 周期误差修正 (PEC)
     pec();
 #endif
 
-    // FLASH LED DURING SIDEREAL TRACKING
+    // 恒星跟踪期间闪烁 LED
 #if LED_STATUS == ON
     if (trackingState == TrackingSidereal) {
-      if (siderealTimer%20L == 0L) { if (ledOn) { digitalWrite(LEDnegPin,HIGH); ledOn=false; } else { digitalWrite(LEDnegPin,LOW); ledOn=true; } }
+      if (siderealTimer%20L == 0L) { if (ledOn) { digitalWrite(LEDnegPin,HIGH);
+      ledOn=false; } else { digitalWrite(LEDnegPin,LOW); ledOn=true; } }
     }
 #endif
 
-    // SIDEREAL TRACKING DURING GOTOS
-    // keeps the target where it's supposed to be while doing gotos
+    // GOTO 期间保持恒星跟踪计算
+    // 确保 GOTO 过程中目标位置依然随时间更新
     if (trackingState == TrackingMoveTo) {
       moveTo();
-      if (lastTrackingState == TrackingSidereal) {
+      // A normal sky Goto started from Motor Hold still has to follow the
+      // sidereal target while it is moving.  Keep lastTrackingState unchanged
+      // so an aborted Goto restores the real pre-Goto state (TrackingNone).
+      if (lastTrackingState == TrackingSidereal || gotoStartTrackingOnSuccess) {
         origTargetAxis1.fixed+=fstepAxis1.fixed;
         origTargetAxis2.fixed+=fstepAxis2.fixed;
-        // don't advance the target during meridian flips or sync
+        // 中天翻转分阶段交接期间不推进无效的中间目标
         if (getInstrPierSide() == PierSideEast || getInstrPierSide() == PierSideWest) {
           cli();
           targetAxis1.fixed+=fstepAxis1.fixed;
@@ -474,7 +569,7 @@ void loop2() {
       }
     }
 
-    // ROTATOR/FOCUSERS, MOVE THE TARGET
+    // 旋转器/调焦器，移动目标
 #if ROTATOR == ON
     rot.poll(trackingState == TrackingSidereal);
 #endif
@@ -485,33 +580,124 @@ void loop2() {
     foc2.poll();
 #endif
 
-    // CALCULATE SOME TRACKING RATES, ETC.
+    // 计算一些跟踪速率等
     if (lstNow%3 == 0) doFastAltCalc(false);
 #if MOUNT_TYPE == ALTAZM
-    // figure out the current Alt/Azm tracking rates
+    // 计算当前的 Alt/Azm（经纬仪）跟踪速率
     if (lstNow%3 != 0) doHorRateCalc();
 #else
-    // figure out the current refraction compensated tracking rate
+    // 计算当前大气折射补偿后的跟踪速率
     if (rateCompensation != RC_NONE && lstNow%3 != 0) doRefractionRateCalc();
 #endif
 
-    // SAFETY CHECKS
 #if LIMIT_SENSE != OFF
-    // support for limit switch(es)
-    byte limit_1st = digitalRead(LimitPin);
-    if (limit_1st == LIMIT_SENSE_STATE) {
-      // Wait for a short while, then read again
-      delayMicroseconds(50);
-      byte limit_2nd = digitalRead(LimitPin);
-      if (limit_2nd == LIMIT_SENSE_STATE) {
-        // It is still low, there must be a problem
-        generalError=ERR_LIMIT_SENSE;
-        stopSlewingAndTracking(SS_LIMIT);
+    byte limit_reading = digitalRead(LimitPin);
+    unsigned long currentTime = millis(); 
+    
+    // [检测到限位触发]
+    if (limit_reading == LIMIT_SENSE_STATE) {
+      
+      lastLimitTriggerTime = currentTime;
+
+      if (isHoming()) {
+        Axis1_LimitLock=0;
+        Axis2_LimitLock=0;
+        return;
+      }
+
+      // 1. 回零模式直接放行（最高权限）
+      // 2. 简单的触发滤波
+      delay(2);
+      if (digitalRead(LimitPin) == LIMIT_SENSE_STATE) {
+
+        // =========================================================
+        // 3. 统一方向定义
+        // =========================================================
+        int currentMotionDir1 = 0;
+        int currentMotionDir2 = 0;
+
+        // --- Axis 1 (RA) ---
+        if (guideDirAxis1 == 'e') currentMotionDir1 = 1;       
+        else if (guideDirAxis1 == 'w') currentMotionDir1 = -1; 
+        else if (trackingState == TrackingMoveTo) {            
+             if (targetAxis1.part.m < posAxis1) currentMotionDir1 = 1; 
+             else if (targetAxis1.part.m > posAxis1) currentMotionDir1 = -1; 
+        }
+
+        // --- Axis 2 (DEC) 恢复标准逻辑 ---
+        if (guideDirAxis2 == 'n') currentMotionDir2 = 1;       
+        else if (guideDirAxis2 == 's') currentMotionDir2 = -1; 
+        else if (trackingState == TrackingMoveTo) {            
+             if (targetAxis2.part.m > posAxis2) currentMotionDir2 = 1; 
+             else if (targetAxis2.part.m < posAxis2) currentMotionDir2 = -1; 
+        }
+
+        // =========================================================
+        // 4. 智能记录锁死方向 (解决静止打断死锁)
+        // =========================================================
+        
+        // --- Axis 1 智能判断 ---
+        if (Axis1_LimitLock == 0) {
+            // 如果是 GOTO 过程中撞击，意图明确，直接记录
+            if (currentMotionDir1 != 0 && trackingState == TrackingMoveTo) {
+                Axis1_LimitLock = currentMotionDir1;
+            } else {
+                // 如果是静止状态下触发(被打断/震动)，通过绝对坐标推断撞了哪边
+                long threshold = 500L; // 容错阈值
+                if (posAxis1 > threshold) Axis1_LimitLock = -1;       // 在西半区，锁西 (-1)
+                else if (posAxis1 < -threshold) Axis1_LimitLock = 1;  // 在东半区，锁东 (1)
+                else if (currentMotionDir1 != 0) Axis1_LimitLock = currentMotionDir1; // 兜底
+            }
+        }
+
+        // --- Axis 2 智能判断 ---
+        if (Axis2_LimitLock == 0) {
+            if (currentMotionDir2 != 0 && trackingState == TrackingMoveTo) {
+                Axis2_LimitLock = currentMotionDir2;
+            } else {
+                long threshold = 500L;
+                if (posAxis2 > threshold) Axis2_LimitLock = 1;        // 在北半区，锁北 (1)
+                else if (posAxis2 < -threshold) Axis2_LimitLock = -1; // 在南半区，锁南 (-1)
+                else if (currentMotionDir2 != 0) Axis2_LimitLock = currentMotionDir2;
+            }
+        }
+
+        // =========================================================
+        // 5. 逃离判断 (Escape Logic)
+        // =========================================================
+        // 只有所有正在移动且已锁定的轴都朝脱离限位方向运动时，
+        // 才允许继续旧逻辑使用 OR，可能出现一个轴在逃离、另一个轴仍
+        // 朝限位方向运动却被整体判定为安全
+        const bool axis1MovingIntoLimit =
+          Axis1_LimitLock != 0 && currentMotionDir1 != 0 && currentMotionDir1 == Axis1_LimitLock;
+        const bool axis2MovingIntoLimit =
+          Axis2_LimitLock != 0 && currentMotionDir2 != 0 && currentMotionDir2 == Axis2_LimitLock;
+        const bool hasEscapeMotion = currentMotionDir1 != 0 || currentMotionDir2 != 0;
+        const bool isEscaping = hasEscapeMotion && !axis1MovingIntoLimit && !axis2MovingIntoLimit;
+
+        // =========================================================
+        // 6. 执行急停
+        // =========================================================
+        if (!isEscaping) {
+            generalError = ERR_LIMIT_SENSE;
+
+            // 物理限位属于硬中断是否需要重新回零统一由
+            // stopSlewingAndTracking(SS_LIMIT_PHYSICAL) 判定，避免多处重复修改状态
+            stopGuideAxis1(); 
+            stopGuideAxis2();
+            stopSlewingAndTracking(SS_LIMIT_PHYSICAL);
+        }
       } 
+    } else {
+       // [限位松开]
+       if (currentTime - lastLimitTriggerTime > 500) {
+           if (guideDirAxis1 == 0 && trackingState != TrackingMoveTo) Axis1_LimitLock=0;
+           if (guideDirAxis2 == 0 && trackingState != TrackingMoveTo) Axis2_LimitLock=0;
+       }
     }
 #endif
 
-    // check for fault signal, stop any slew or guide and turn tracking off
+    // 检查故障信号，停止任何旋转或导星并关闭跟踪
 #if AXIS1_DRIVER_STATUS == LOW || AXIS1_DRIVER_STATUS == HIGH
     faultAxis1=(digitalRead(Axis1_FAULT) == AXIS1_DRIVER_STATUS);
 #elif AXIS1_DRIVER_STATUS == TMC_SPI
@@ -523,20 +709,23 @@ void loop2() {
     if (lst%2 == 1) faultAxis2=tmcAxis2.error();
 #endif
 
-    if (faultAxis1 || faultAxis2) { generalError=ERR_MOTOR_FAULT; stopSlewingAndTracking(SS_LIMIT_HARD); }
-
-    if (safetyLimitsOn) {
-      // check altitude overhead limit and horizon limit
-      if (currentAlt < minAlt) { generalError=ERR_ALT_MIN; stopSlewingAndTracking((MOUNT_TYPE == ALTAZM)?SS_LIMIT_AXIS2_MIN:SS_LIMIT); }
-      if (currentAlt > maxAlt) { generalError=ERR_ALT_MAX; stopSlewingAndTracking((MOUNT_TYPE == ALTAZM)?SS_LIMIT_AXIS2_MAX:SS_LIMIT); }
+    if (faultAxis1 || faultAxis2) { generalError=ERR_MOTOR_FAULT; stopSlewingAndTracking(SS_LIMIT_HARD);
     }
 
-    // OPTION TO POWER DOWN AXIS2 IF NOT MOVING
+    if (safetyLimitsOn) {
+      // 检查高度角上限和地平线限制
+      if (currentAlt < minAlt) { generalError=ERR_ALT_MIN;
+      stopSlewingAndTracking((MOUNT_TYPE == ALTAZM)?SS_LIMIT_AXIS2_MIN:SS_LIMIT); }
+      if (currentAlt > maxAlt) { generalError=ERR_ALT_MAX; stopSlewingAndTracking((MOUNT_TYPE == ALTAZM)?SS_LIMIT_AXIS2_MAX:SS_LIMIT);
+      }
+    }
+
+    // 选项：如果轴2不移动则断电
 #if AXIS2_DRIVER_POWER_DOWN == ON && MOUNT_TYPE != ALTAZM
     autoPowerDownAxis2();
 #endif
 
-    // 0.01S POLLING -------------------------------------------------------------------------------------
+    // 0.01秒 轮询任务 
 #if TIME_LOCATION_SOURCE == GPS
     if ((PPS_SENSE == OFF || ppsSynced) && !tls.active && tls.poll()) {
       SerialGPS.end();
@@ -558,7 +747,6 @@ void loop2() {
 
       dateWasSet=true;
       timeWasSet=true;
-
       if (parkStatus == Parked) {
         VLF("MSG: Restoring parked telescope pointing state");
         unPark(false);
@@ -566,35 +754,35 @@ void loop2() {
 }
 #endif
 
-    // UPDATE THE UT1 CLOCK
+    // 更新 UT1 时钟
     cli(); long cs=lst; sei();
     double t2=(double)((cs-lst_start)/100.0)/1.00273790935;
-    // This just needs to be accurate to the nearest second, it's about 10x better
+    // 这只需要精确到秒，精度大约高 10 倍
     UT1=UT1_start+(t2/3600.0);
-
-    // UPDATE AUXILIARY FEATURES
+    // 更新辅助功能
 #ifdef FEATURES_PRESENT
     featuresPoll();
 #endif
     
-    // WEATHER
+    // 天气监测
     if (!isSlewing()) ambient.poll();
-
-    // MONITOR NV CACHE
+    // 监控 NV 缓存
 #if DEBUG == VERBOSE && DEBUG_NV == ON
     static bool lastCommitted=true;
     bool committed=nv.committed();
-    if (committed && !lastCommitted) { DLF("MSG: NV commit done"); lastCommitted=committed; }
-    if (!committed && lastCommitted) { DLF("MSG: NV data in cache"); lastCommitted=committed; }
+    if (committed && !lastCommitted) { DLF("MSG: NV commit done"); lastCommitted=committed;
+    }
+    if (!committed && lastCommitted) { DLF("MSG: NV data in cache"); lastCommitted=committed;
+    }
 #endif
 
-    // TRIGGER ESPFLASH
+    // 触发 ESPFLASH (固件烧写)
 #if defined(AddonTriggerPin)
     fa.poll();
 #endif
   }
 
-  // FASTEST POLLING -----------------------------------------------------------------------------------
+  // 最快轮询 (FASTEST POLLING) 
 #if MODE_SWITCH_BEFORE_SLEW == OFF && AXIS1_DRIVER_MODEL == TMC_SPI
   autoModeSwitch();
 #endif
@@ -610,122 +798,183 @@ void loop2() {
 #endif
   if (!isSlewing()) nv.poll();
   
-  // WORKLOAD MONITORING -------------------------------------------------------------------------------
+  // 工作负载监控 (WORKLOAD MONITORING) 
   unsigned long this_loop_micros=micros();
   loop_time=(long)(this_loop_micros-last_loop_micros);
   if (loop_time > worst_loop_time) worst_loop_time=loop_time;
   last_loop_micros=this_loop_micros;
   average_loop_time=(average_loop_time*49+loop_time)/50;
 
-  // 1 SECOND TIMED ------------------------------------------------------------------------------------
+  // 1 秒定时任务 
   unsigned long tempMs=millis();
   static unsigned long housekeepingTimer=0;
   if ((long)(tempMs-housekeepingTimer) > 1000L) {
     housekeepingTimer=tempMs;
 
 #if ROTATOR == ON && MOUNT_TYPE == ALTAZM
-    // calculate and set the derotation rate as required
-    double h,d; getApproxEqu(&h,&d,true);
+    // 根据需要计算并设置场旋消除速率
+    double h,d;
+    getApproxEqu(&h,&d,true);
     if (trackingState == TrackingSidereal) rot.derotate(h,d);
 #endif
 
-    // adjust tracking rate for Alt/Azm mounts
-    // adjust tracking rate for refraction
+    // 调整经纬仪 (Alt/Azm) 的跟踪速率
+    // 调整折射补偿的跟踪速率
     setDeltaTrackingRate();
-
-    // basic check to see if we're not at home
+    // 基本检查，看我们是否不在原点 (Home)
     if (trackingState != TrackingNone) atHome=false;
-
 #if PPS_SENSE != OFF
-    // update clock via PPS
+    // 通过 PPS (每秒脉冲) 更新时钟
     cli();
     ppsRateRatio=((double)1000000.0/(double)(ppsAvgMicroS));
-    if ((long)(micros()-(ppsLastMicroS+2000000UL)) > 0) ppsSynced=false; // if more than two seconds has ellapsed without a pulse we've lost sync
+    if ((long)(micros()-(ppsLastMicroS+2000000UL)) > 0) ppsSynced=false; // 如果超过两秒没有脉冲，则失去同步
     sei();
-  #if LED_STATUS2 == ON
+#if LED_STATUS2 == ON
     if (trackingState == TrackingSidereal) {
-      if (ppsSynced) { if (led2On) { digitalWrite(LEDneg2Pin,HIGH); led2On=false; } else { digitalWrite(LEDneg2Pin,LOW); led2On=true; } } else { digitalWrite(LEDneg2Pin,HIGH); led2On=false; } // indicate PPS
+      if (ppsSynced) { if (led2On) { digitalWrite(LEDneg2Pin,HIGH);
+      led2On=false; } else { digitalWrite(LEDneg2Pin,LOW); led2On=true; } } else { digitalWrite(LEDneg2Pin,HIGH); led2On=false;
+      } // 指示 PPS 状态
     }
   #endif
-    if (ppsLastRateRatio != ppsRateRatio) { SiderealClockSetInterval(siderealInterval); ppsLastRateRatio=ppsRateRatio; }
+    if (ppsLastRateRatio != ppsRateRatio) { SiderealClockSetInterval(siderealInterval); ppsLastRateRatio=ppsRateRatio;
+    }
 #endif
 
 #if LED_STATUS == ON
-    // LED indicate PWR on 
-    if (trackingState != TrackingSidereal) if (!ledOn) { digitalWrite(LEDnegPin,LOW); ledOn=true; }
+    // LED 指示电源开启 
+    if (trackingState != TrackingSidereal) if (!ledOn) { digitalWrite(LEDnegPin,LOW);
+    ledOn=true; }
 #endif
 #if LED_STATUS2 == ON
-    // LED indicate STOP and GOTO
-    if (trackingState == TrackingMoveTo) if (!led2On) { digitalWrite(LEDneg2Pin,LOW); led2On=true; }
+    // LED 指示停止和 GOTO
+    if (trackingState == TrackingMoveTo) if (!led2On) { digitalWrite(LEDneg2Pin,LOW);
+    led2On=true; }
   #if PPS_SENSE != OFF
-    if (trackingState == TrackingNone) if (led2On) { digitalWrite(LEDneg2Pin,HIGH); led2On=false; }
+    if (trackingState == TrackingNone) if (led2On) { digitalWrite(LEDneg2Pin,HIGH); led2On=false;
+    }
   #else
-    if (trackingState != TrackingMoveTo) if (led2On) { digitalWrite(LEDneg2Pin,HIGH); led2On=false; }
+    if (trackingState != TrackingMoveTo) if (led2On) { digitalWrite(LEDneg2Pin,HIGH); led2On=false;
+    }
   #endif
 #endif
 
-    // SAFETY CHECKS -------------------------------------------------------------------------------------
-    // keeps mount from tracking past the meridian limit, past the AXIS1_LIMIT_MAX, or past the Dec limits
+    // 安全检查 (SAFETY CHECKS)
+    // 防止支架跟踪超过中天限制、超过 AXIS1_LIMIT_MAX 或超过 Dec 限制
     if (safetyLimitsOn) {
-      // check for exceeding AXIS1_LIMIT_MIN or AXIS1_LIMIT_MAX
-      if (getInstrAxis1() < axis1Settings.min) { generalError=(MOUNT_TYPE==ALTAZM)?ERR_AZM:ERR_UNDER_POLE; stopSlewingAndTracking(SS_LIMIT_AXIS1_MIN); } else
-      if (getInstrAxis1() > axis1Settings.max) { generalError=(MOUNT_TYPE==ALTAZM)?ERR_AZM:ERR_UNDER_POLE; stopSlewingAndTracking(SS_LIMIT_AXIS1_MAX); } else
-      // check for exceeding Meridian Limits
+      // 检查是否超过 AXIS1_LIMIT_MIN 或 AXIS1_LIMIT_MAX
+      if (getInstrAxis1() < axis1Settings.min) { generalError=(MOUNT_TYPE==ALTAZM)?ERR_AZM:ERR_UNDER_POLE;
+      stopSlewingAndTracking(SS_LIMIT_AXIS1_MIN); } else
+      if (getInstrAxis1() > axis1Settings.max) { generalError=(MOUNT_TYPE==ALTAZM)?ERR_AZM:ERR_UNDER_POLE; stopSlewingAndTracking(SS_LIMIT_AXIS1_MAX);
+      } else
+      // 检查是否超过中天限制
       if (meridianFlip != MeridianFlipNever) {
         if (getInstrPierSide() == PierSideWest) {
-          if (getInstrAxis1() > degreesPastMeridianW && (!(autoMeridianFlip && goToHere(true) == CE_NONE))) { generalError=ERR_MERIDIAN; stopSlewingAndTracking(SS_LIMIT_AXIS1_MAX); }
+          if (getInstrAxis1() > degreesPastMeridianW && (!(autoMeridianFlip && goToHere(true) == CE_NONE))) { generalError=ERR_MERIDIAN;
+          stopSlewingAndTracking(SS_LIMIT_AXIS1_MAX); }
         } else
-        if (getInstrAxis1() < -degreesPastMeridianE) { generalError=ERR_MERIDIAN; stopSlewingAndTracking(SS_LIMIT_AXIS1_MIN); }
+        if (getInstrAxis1() < -degreesPastMeridianE) { generalError=ERR_MERIDIAN;
+          stopSlewingAndTracking(SS_LIMIT_AXIS1_MIN); }
       }
     }
-    double a2; if (AXIS2_TANGENT_ARM == ON) { cli(); a2=posAxis2/axis2Settings.stepsPerMeasure; sei(); } else a2=getInstrAxis2();
-    // check for exceeding AXIS2_LIMIT_MIN or AXIS2_LIMIT_MAX
-    if (a2 < axis2Settings.min) { generalError=ERR_DEC; stopSlewingAndTracking(SS_LIMIT_AXIS2_MIN); } else
-    if (a2 > axis2Settings.max) { generalError=ERR_DEC; stopSlewingAndTracking(SS_LIMIT_AXIS2_MAX); } else
-    // automatically clear error in TA mode
+    double a2;
+    if (AXIS2_TANGENT_ARM == ON) { cli(); a2=posAxis2/axis2Settings.stepsPerMeasure; sei(); } else a2=getInstrAxis2();
+    // 检查是否超过 AXIS2_LIMIT_MIN 或 AXIS2_LIMIT_MAX
+    if (a2 < axis2Settings.min) { generalError=ERR_DEC; stopSlewingAndTracking(SS_LIMIT_AXIS2_MIN);
+    } else
+    if (a2 > axis2Settings.max) { generalError=ERR_DEC; stopSlewingAndTracking(SS_LIMIT_AXIS2_MAX);
+    } else
+    // 在切线臂模式下自动清除错误
     if (AXIS2_TANGENT_ARM == ON && (trackingState == TrackingSidereal && generalError == ERR_DEC)) generalError=ERR_NONE;
-
   } else {
-    // COMMAND PROCESSING --------------------------------------------------------------------------------
+    // 命令处理 (COMMAND PROCESSING) 
     processCommands();
   }
 }
 
-// stops fast motion as required
-// SS_ALL_FAST stops slewing but not tracking
-// SS_LIMIT stops gotos + spiral guides + tracking
-// SS_LIMIT_HARD stops slewing + tracking
-// SS_LIMIT_AXIS1_MIN stops gotos + spiral guides + tracking, also stops/blocks RA/Az guides in the wrong direction
-// SS_LIMIT_AXIS1_MAX stops gotos + spiral guides + tracking, also stops/blocks RA/Az guides in the wrong direction
-// SS_LIMIT_AXIS2_MIN stops gotos + spiral guides + tracking, also stops/blocks Dec/Alt guides in the wrong direction
-// SS_LIMIT_AXIS2_MAX stops gotos + spiral guides + tracking, also stops/blocks Dec/Alt guides in the wrong direction
+// 根据需要停止快速运动
+// SS_ALL_FAST 停止旋转（Slewing）但不停止跟踪
+// SS_LIMIT 停止 GOTO + 螺旋搜寻 + 跟踪
+// SS_LIMIT_HARD 停止旋转 + 跟踪，并将位置标记为不可信
+// SS_LIMIT_PHYSICAL 停止旋转 + 跟踪；是否强制回零由 HOME_REQUIRED_AFTER_LIMIT 决定
+// SS_LIMIT_AXIS1_MIN 停止 GOTO + 螺旋搜寻 + 跟踪，并停止/阻止反向的赤经/方位角导星
+// SS_LIMIT_AXIS1_MAX 停止 GOTO + 螺旋搜寻 + 跟踪，并停止/阻止正向的赤经/方位角导星
+// SS_LIMIT_AXIS2_MIN 停止 GOTO + 螺旋搜寻 + 跟踪，并停止/阻止反向的赤纬/高度角导星
+// SS_LIMIT_AXIS2_MAX 停止 GOTO + 螺旋搜寻 + 跟踪，并停止/阻止正向的赤纬/高度角导星
 void stopSlewingAndTracking(StopSlewActions ss) {
+
+  // 驱动器硬故障可能造成丢步，必须重新建立位置基准
+  if (ss == SS_LIMIT_HARD) {
+    invalidatePositionReference();
+    safetyLimitsOn=false;
+    if (trackingState == TrackingMoveTo) gotoAbortState = GOTO_ABORT_POSITION_LOST;
+  }
+
+  if (ss == SS_LIMIT_PHYSICAL) {
+    gotoStartTrackingOnSuccess=false;
+#if HOME_REQUIRED_AFTER_LIMIT == ON
+  #if HOME_SENSE == OFF
+    // 限位开关已停止指令运动；保留坐标，但仅允许返回 Home
+    requireCoordinateHomeRecovery();
+  #else
+    invalidatePositionReference();
+  #endif
+    safetyLimitsOn=false;
+    if (trackingState == TrackingMoveTo) gotoAbortState=GOTO_ABORT_POSITION_LOST;
+#else
+    if (trackingState == TrackingMoveTo) gotoAbortState=GOTO_ABORT_HARD_STOP;
+#endif
+  }
+
   if (trackingState == TrackingMoveTo) {
+
+    // 任何中止都不能继续使用“正常到达后自动跟踪”的一次性请求；
+    // lastTrackingState 和原版 Abort/5 秒同步流程保持不变
+    gotoStartTrackingOnSuccess=false;
+
+    // 软件轴范围、中天和高度限制属于可恢复中止；硬故障状态优先级更高，
+    // 不能被后续的软件停止原因覆盖
+    if (ss != SS_ALL_FAST && gotoAbortState == GOTO_ABORT_NONE) gotoAbortState=GOTO_ABORT_STOPPED;
+
     if (!abortGoto) {
-      abortGoto=StartAbortGoto;
+      abortGoto = StartAbortGoto;
       VLF("MSG: Goto aborted");
     }
+
   } else {
+
     if (spiralGuide) stopGuideSpiral();
-    if (ss == SS_ALL_FAST || ss == SS_LIMIT_HARD) { stopGuideAxis1(); stopGuideAxis2(); } else
+
+    if (ss == SS_ALL_FAST || ss == SS_LIMIT_HARD || ss == SS_LIMIT_PHYSICAL) {
+      stopGuideAxis1();
+      stopGuideAxis2();
+    } else
     if (ss == SS_LIMIT_AXIS1_MIN) {
-      if (guideDirAxis1 == 'e' ) guideDirAxis1='b';
+      if (guideDirAxis1 == 'e') guideDirAxis1 = 'b';
     } else
     if (ss == SS_LIMIT_AXIS1_MAX) {
-      if (guideDirAxis1 == 'w' ) guideDirAxis1='b';
+      if (guideDirAxis1 == 'w') guideDirAxis1 = 'b';
     } else
     if (ss == SS_LIMIT_AXIS2_MIN) {
-      if (getInstrPierSide() == PierSideWest) { if (guideDirAxis2 == 'n' ) guideDirAxis2='b'; } else if (guideDirAxis2 == 's' ) guideDirAxis2='b';
+      if (getInstrPierSide() == PierSideWest) {
+        if (guideDirAxis2 == 'n') guideDirAxis2 = 'b';
+      } else {
+        if (guideDirAxis2 == 's') guideDirAxis2 = 'b';
+      }
     } else
     if (ss == SS_LIMIT_AXIS2_MAX) {
-      if (getInstrPierSide() == PierSideWest) { if (guideDirAxis2 == 's' ) guideDirAxis2='b'; } else if (guideDirAxis2 == 'n' ) guideDirAxis2='b';
+      if (getInstrPierSide() == PierSideWest) {
+        if (guideDirAxis2 == 's') guideDirAxis2 = 'b';
+      } else {
+        if (guideDirAxis2 == 'n') guideDirAxis2 = 'b';
+      }
     }
+
     if (trackingState != TrackingNone) {
       if (ss != SS_ALL_FAST) {
         if (generalError != ERR_DEC) {
           stopGuideAxis1();
           stopGuideAxis2();
-          trackingState=TrackingNone;
+          trackingState = TrackingNone;
           VLF("MSG: Limit exceeded guiding/tracking stopped");
         }
       }
