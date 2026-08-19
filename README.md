@@ -13,17 +13,17 @@
 
 | 分支 | 用途 |
 | --- | --- |
-| `release-4.24` | OnStep 4.24 上游基线，用于同步和代码比较 |
-| `release-4.24-custom` | 当前自定义稳定版本 |
-| `release-4.24-custom-dev` | 自定义开发和测试版本 |
+| `release-4.24-original` | OnStep 4.24 上游基线，用于同步和代码比较 |
+| `release-4.24` | 当前自定义稳定版本 |
+| `release-4.24-dev` | 开发和测试版本 |
 
 一般使用建议选择：
 
-`release-4.24-custom`
+`release-4.24`
 
 开发中的功能和未经完整验证的修改位于：
 
-`release-4.24-custom-dev`
+`release-4.24-dev`
 
 ## 主要修改
 
@@ -51,7 +51,7 @@
 
 基础版本：
 
-`release-4.24`
+`release-4.24-original`
 
 原作者：
 
@@ -93,7 +93,7 @@ Custom modifications:
 
 **Leo-John233 and project contributors**
 
-完整修改记录请参阅本仓库 Git History。
+完整修改记录请参阅本仓库 Git History
 
 ---
 
