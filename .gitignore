@@ -43,3 +43,6 @@
 
 # SVN folders
 .svn
+
+# Hidden directories (local IDE/workspace files, docs) - not for commit
+.*/

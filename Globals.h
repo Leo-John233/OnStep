@@ -353,6 +353,11 @@ bool parkSaved                          = false;
 bool atHome                             = true;
 bool homeMount                          = false;
 
+// :GVA# 双回复(延迟第二回复) ------------------------------------------------------------------------------------------------------
+bool gvaDelayedReply                    = false;  // 等待发送 :GVA# 第二次回复
+unsigned long gvaReplyStartTime         = 0;      // 第一次回复发送时的 millis()
+int gvaReplyChannel                     = 0;      // 回复通道(COMMAND_SERIAL_xxx)
+
 // Command processing --------------------------------------------------------------------------------------------------------------
 #define BAUD 9600
 // serial speed

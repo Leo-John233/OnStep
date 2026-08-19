@@ -410,6 +410,14 @@
   #error "Configuration (Config.h): Setting MOUNT_TYPE use GEM, FORK, or ALTAZM."
 #endif
 
+#ifndef FIRMWARE_AUTHOR
+  #error "Configuration (Config.h): Setting FIRMWARE_AUTHOR must be present!"
+#endif
+
+#ifndef FIRMWARE_AUTHOR2
+  #error "Configuration (Config.h): Setting FIRMWARE_AUTHOR2 must be present!"
+#endif
+
 #ifndef LED_STATUS
   #error "Configuration (Config.h): Setting LED_STATUS must be present!"
 #elif LED_STATUS != OFF && LED_STATUS != ON

@@ -79,6 +79,34 @@ void processCommands() {
   #endif
 #endif
 
+    // :GVA# 延迟第二回复 —— 首次回复后 100ms 在同一串口通道再次发送作者信息
+    if (gvaDelayedReply && (long)(millis() - gvaReplyStartTime) >= 100L) {
+      gvaDelayedReply = false;
+      if (gvaReplyChannel == COMMAND_SERIAL_A) {
+        SerialA.print(FIRMWARE_AUTHOR2 "#");
+      }
+#ifdef HAL_SERIAL_B_ENABLED
+      else if (gvaReplyChannel == COMMAND_SERIAL_B) {
+        SerialB.print(FIRMWARE_AUTHOR2 "#");
+      }
+#endif
+#ifdef HAL_SERIAL_C_ENABLED
+      else if (gvaReplyChannel == COMMAND_SERIAL_C) {
+        SerialC.print(FIRMWARE_AUTHOR2 "#");
+      }
+#endif
+#ifdef HAL_SERIAL_D_ENABLED
+      else if (gvaReplyChannel == COMMAND_SERIAL_D) {
+        SerialD.print(FIRMWARE_AUTHOR2 "#");
+      }
+#endif
+#ifdef HAL_SERIAL_E_ENABLED
+      else if (gvaReplyChannel == COMMAND_SERIAL_E) {
+        SerialE.print(FIRMWARE_AUTHOR2 "#");
+      }
+#endif
+    }
+
     // if a command is ready, process it
     Command process_command = COMMAND_NONE;
     if (cmdA.ready()) { strcpy(command,cmdA.getCmd()); strcpy(parameter,cmdA.getParameter()); cmdA.flush(); process_command=COMMAND_SERIAL_A; }
@@ -819,6 +847,8 @@ void processCommands() {
         reply[9]=0;
         boolReply=false;
       } else
+// :GVA#      Get firmware version author
+//            Returns: s# (first reply immediate, second after 100ms)
 // :GVD#      Get Telescope Firmware Date
 //            Returns: MTH DD YYYY#
 // :GVM#      General Message
@@ -831,6 +861,7 @@ void processCommands() {
 //            Returns: HH:MM:SS#
       if (command[1] == 'V') {
         if (parameter[1] == 0) {
+          if (parameter[0] == 'A') { strcpy(reply,FIRMWARE_AUTHOR); boolReply=false; gvaDelayedReply=true; gvaReplyStartTime=millis(); gvaReplyChannel=process_command; } else
           if (parameter[0] == 'D') strcpy(reply,FirmwareDate); else
           if (parameter[0] == 'M') sprintf(reply,"OnStep %i.%i%s",FirmwareVersionMajor,FirmwareVersionMinor,FirmwareVersionPatch); else
           if (parameter[0] == 'N') sprintf(reply,"%i.%i%s",FirmwareVersionMajor,FirmwareVersionMinor,FirmwareVersionPatch); else

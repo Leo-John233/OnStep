@@ -33,6 +33,13 @@
 #define SERIAL_C_BLUETOOTH_NAME  "OnStep" // "On..", Bluetooth device name for ESP32.                                         Option
                                           //  ESP32的蓝牙设备名称
 
+// 固件作者(FIRMWARE AUTHOR) ------------------------------------- 用于 :GVA# 命令双回复
+//   :GVA# 立即返回第一作者，100ms 后再返回第二作者（供客户端两次握手/校验）
+#define FIRMWARE_AUTHOR               "TBD" //    "TBD", 第一回复作者（第一固件修改作者，非必要勿修改）
+                                            //    请在引号内填写您的名字
+#define FIRMWARE_AUTHOR2              "TBD" //    "TBD", 第二回复作者（二改请标注修改人员）
+                                            //    请在引号内填写名字
+
 // 赤道仪类型(MOUNT TYPE) ----------------------------------------- see https://onstep.groups.io/g/main/wiki/Configuration-Controller#MOUNT_TYPE
 #define MOUNT_TYPE                    GEM //    GEM, GEM for German Equatorial, FORK for Equatorial Fork, or ALTAZM          <-Req'd
                                           //    GEM, GEM=德式赤道仪, FORK=叉式赤道仪, ALTAZM=经纬仪
