@@ -1,101 +1,57 @@
 name: Update Repository Activity
 
-
 on:
-
   push:
-
     branches:
-      - master
+      - release-4.24
 
     paths-ignore:
-
       - README.md
       - assets/repository-activity.svg
 
-
   workflow_dispatch:
 
-
 concurrency:
-
   group: repository-activity
-
   cancel-in-progress: true
 
-
 permissions:
-
   contents: write
 
-
 jobs:
-
   update-activity:
-
     runs-on: ubuntu-latest
 
-
     env:
-
       ACTIVITY_TIMEZONE: Asia/Shanghai
-
+      TARGET_BRANCH: release-4.24
 
     steps:
-
       - name: Checkout repository
-
         uses: actions/checkout@v4
-
         with:
-
+          ref: release-4.24
           fetch-depth: 0
 
-
       - name: Generate repository activity
-
         run: |
-
           python3 .github/scripts/update_activity.py
 
-
       - name: Commit generated files
-
         run: |
-
-          git config \
-            user.name \
-            "github-actions[bot]"
-
-          git config \
-            user.email \
-            "41898282+github-actions[bot]@users.noreply.github.com"
-
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           git add README.md
-
           git add assets/repository-activity.svg
-
 
           if git diff --cached --quiet
           then
-
             echo "No changes"
-
             exit 0
-
           fi
 
+          git commit -m "docs: auto-update repository activity"
 
-          git commit \
-            -m \
-            "docs: auto-update repository activity"
-
-
-          git pull \
-            --rebase \
-            origin master
-
-
-          git push \
-            origin master
+          git pull --rebase origin "$TARGET_BRANCH"
+          git push origin "$TARGET_BRANCH"
