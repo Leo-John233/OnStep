@@ -45,7 +45,10 @@ jobs:
 
           git add README.md
           git add assets/repository-activity.svg
-          git add assets/repository-statistics.svg
+
+          if [ -f assets/repository-statistics.svg ]; then
+            git add assets/repository-statistics.svg
+          fi
 
           if git diff --cached --quiet
           then
