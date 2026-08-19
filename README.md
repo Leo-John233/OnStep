@@ -162,7 +162,6 @@ Custom modifications and maintenance:
 ## 📝 最近代码修改
 
 <!-- RECENT_CHANGES:START -->
-最近代码提交记录由 GitHub Actions 自动更新
 <!-- RECENT_CHANGES:END -->
 
 ## 🟩 Repository Activity
