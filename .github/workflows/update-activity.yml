@@ -8,6 +8,7 @@ on:
     paths-ignore:
       - README.md
       - assets/repository-activity.svg
+      - assets/repository-statistics.svg
 
   workflow_dispatch:
 
@@ -44,6 +45,7 @@ jobs:
 
           git add README.md
           git add assets/repository-activity.svg
+          git add assets/repository-statistics.svg
 
           if git diff --cached --quiet
           then
