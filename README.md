@@ -1,20 +1,20 @@
 # OnStep Telescope Controller — Custom
 
-基于 [hjd1964/OnStep](https://github.com/hjd1964/OnStep) `release-4.24` 开发的自定义 OnStep 固件。
+基于 [hjd1964/OnStep](https://github.com/hjd1964/OnStep) `release-4.24` 开发的自定义 OnStep 固件
 
-本项目主要用于自制谐波赤道仪及 MaxESP3 控制器，在原始 OnStep 4.24 基础上针对实际硬件和使用需求进行了修改。
+本项目主要用于自制谐波赤道仪及 MaxESP3 控制器，在原始 OnStep 4.24 基础上针对实际硬件和使用需求进行了修改
 
 > [!IMPORTANT]
-> 本项目是 OnStep 的非官方修改版本。
+> 本项目是 OnStep 的非官方修改版本
 >
-> OnStep 原项目及核心固件由 **Howard Dutton** 开发和维护。
+> OnStep 原项目及核心固件由 **Howard Dutton** 开发和维护
 >
-> 本仓库中的自定义修改由 **Leo-John233 及项目贡献者**维护，具体修改内容和日期以 Git 提交历史为准。
+> 本仓库中的自定义修改由 **Leo-John233 及项目贡献者**维护，具体修改内容和日期以 Git 提交历史为准
 
 > [!WARNING]
-> 本版本包含针对特定硬件的控制逻辑修改，不保证完全兼容所有 OnStep 支持的硬件。
+> 本版本包含针对特定硬件的控制逻辑修改，不保证完全兼容所有 OnStep 支持的硬件
 >
-> 使用前请根据实际设备检查硬件配置、电机参数、PinMap、Home 和 Limit 等相关设置。
+> 使用前请根据实际设备检查硬件配置、电机参数、PinMap、Home 和 Limit 等相关设置
 
 ## 分支说明
 
@@ -52,7 +52,7 @@
 - Config.h 配置调整
 - 中文注释及代码整理
 
-具体修改内容及版本变化请参阅本仓库 Git 提交记录。
+具体修改内容及版本变化请参阅本仓库 Git 提交记录
 
 ## Upstream
 
@@ -107,7 +107,7 @@ For complete documentation, hardware designs and configuration information, plea
 
 ## Support
 
-对于原始 OnStep 功能和通用配置问题，请优先参考 OnStep 官方仓库、Wiki 和 OnStep Group。
+对于原始 OnStep 功能和通用配置问题，请优先参考 OnStep 官方仓库、Wiki 和 OnStep Group
 
 对于本仓库自定义修改相关的问题，包括：
 
@@ -123,9 +123,9 @@ For complete documentation, hardware designs and configuration information, plea
 - PinMap
 - 其他本仓库特有修改
 
-请优先以本仓库代码、配置和 Git 提交记录为准。
+请优先以本仓库代码、配置和 Git 提交记录为准
 
-在向 OnStep 上游报告问题前，建议先确认该问题是否同样存在于未经修改的官方 OnStep 固件中。
+在向 OnStep 上游报告问题前，建议先确认该问题是否同样存在于未经修改的官方 OnStep 固件中
 
 ## License
 
@@ -155,7 +155,7 @@ Custom modifications and maintenance:
 
 **Leo-John233 and project contributors**
 
-完整修改内容及修改日期请参阅本仓库 Git History。
+完整修改内容及修改日期请参阅本仓库 Git History
 
 ---
 
