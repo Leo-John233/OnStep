@@ -1,34 +1,30 @@
 /*
- * Title       OnStep WiFi Server
- * by          Howard Dutton
+ * 标题          OnStep WiFi Server
+ * 作者          Howard Dutton
  *
- * Copyright (C) 2016 to 2021 Howard Dutton
+ * 版权所有 (C) 2016 至 2021 Howard Dutton
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * 本程序为自由软件：您可以根据自由软件基金会发布的 GNU 通用公共许可证（GNU GPL）
+ * 的条款重新分发和/或修改它，无论是许可证的第 3 版，还是（由您选择）任何更高版本。
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * 本程序的发布是希望它能有用，但【没有任何担保】；
+ * 甚至没有对【适销性】或【特定用途适用性】的暗示性担保。
+ * 有关更多详细信息，请参阅 GNU 通用公共许可证。
  *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ * 您应该随本程序一起收到了一份 GNU 通用公共许可证的副本。
+ * 如果没有，请参阅 <http://www.gnu.org/licenses/>。
  *
- * 
- *
- * Revision History, see GitHub
+ * *
+ * 修订历史：请参阅 GitHub
  *
  *
- * Author: Howard Dutton
+ * 作者: Howard Dutton
  * http://www.stellarjourney.com
  * hjd1964@gmail.com
  *
- * Description
+ * 描述
  *
- * ESP8266 OnStep control
+ * ESP8266 OnStep 控制
  *
  */
 
@@ -41,8 +37,8 @@
 
 #define Version FirmwareVersionMajor "." FirmwareVersionMinor FirmwareVersionPatch
 
-// Enable debug and/or status messages to be passed to OnStep for display using its debug facilities
-// default "DEBUG OFF", use "DEBUG ON" for background errors only, use "DEBUG VERBOSE" for all errors and status messages
+// 启用传递给 OnStep 的调试和/或状态消息，以便使用其调试设施进行显示
+// 默认 "DEBUG OFF"，使用 "DEBUG ON" 仅显示后台错误，使用 "DEBUG VERBOSE" 显示所有错误和状态消息
 #define DEBUG OFF
 
 #include <limits.h>
@@ -58,7 +54,7 @@
   #include <ESP8266WebServer.h>
   #include <ESP8266WiFiAP.h>
 #endif
-#define Ser Serial  // Default=Serial, This is the hardware serial port where OnStep is attached
+[cite_start]#define Ser Serial  // 默认=Serial，这是连接 OnStep 的硬件串口 [cite: 146]
 
 #include <EEPROM.h>
 #include "EEProm.h"
@@ -73,8 +69,9 @@
 #include "Locale.h"
 #include "Globals.h"
 
-// The settings below are for initialization only, afterward they are stored and recalled from EEPROM and must
-// be changed in the web interface OR with a reset (for initialization again) as described in the Config.h comments
+// 
+// 以下设置仅用于初始化，之后它们将存储在 EEPROM 中并从中调用，
+[cite_start]// 必须在 Web 界面中更改，或者通过复位（再次初始化）来更改，如 Config.h 注释中所述 [cite: 153]
 #define TIMEOUT_WEB 60
 #define TIMEOUT_CMD 60
 
@@ -87,12 +84,12 @@ Encoders encoders;
 #endif
 
 #ifndef LEGACY_TRANSMIT_ON
-  // macros to help with sending webpage data, chunked
+  // 辅助发送网页数据的宏，分块传输 (chunked)
   #define sendHtmlStart() server.setContentLength(CONTENT_LENGTH_UNKNOWN); server.sendHeader("Cache-Control","no-cache"); server.send(200, "text/html", String());
   #define sendHtml(x) server.sendContent(x); x=""
   #define sendHtmlDone(x) server.sendContent("");
 #else
-  // macros to help with sending webpage data, normal method
+  // 辅助发送网页数据的宏，普通方法
   #define sendHtmlStart()
   #define sendHtml(x)
   #define sendHtmlDone(x) server.send(200, "text/html", x)
@@ -100,7 +97,6 @@ Encoders encoders;
 
 #define Default_Password "password"
 char masterPassword[40]=Default_Password;
-
 bool accessPointEnabled=true;
 bool stationEnabled=false;
 bool stationDhcpEnabled=true;
@@ -163,7 +159,7 @@ void setup(void){
 #endif
   nv.init();
 
-  // EEPROM Init
+  // EEPROM 初始化
   if (nv.readInt(EE_KEY_HIGH) != 8266 || nv.readInt(EE_KEY_LOW) != 0) {
     nv.writeInt(EE_KEY_HIGH,8266);
     nv.writeInt(EE_KEY_LOW,0);
@@ -188,19 +184,18 @@ void setup(void){
     for (int i=0;i<4;i++) nv.write(EE_AP_IP+i,wifi_ap_ip[i]);
     for (int i=0;i<4;i++) nv.write(EE_AP_GW+i,wifi_ap_gw[i]);
     for (int i=0;i<4;i++) nv.write(EE_AP_SN+i,wifi_ap_sn[i]);
-
 #if ENCODERS == ON
     nv.writeLong(EE_ENC_A1_DIFF_TO,AXIS1_ENC_DIFF_LIMIT_TO);
     nv.writeLong(EE_ENC_A2_DIFF_TO,AXIS2_ENC_DIFF_LIMIT_TO);
-    nv.writeLong(EE_ENC_RC_STA,20);     // enc short term average samples
-    nv.writeLong(EE_ENC_RC_LTA,200);    // enc long term average samples
-    nv.writeLong(EE_ENC_RC_RCOMP,0);    // enc rate comp
-    nv.writeLong(EE_ENC_RC_INTP_P,1);   // intpol phase
-    nv.writeLong(EE_ENC_RC_INTP_M,0);   // intpol mag
-    nv.writeLong(EE_ENC_RC_PROP,10);    // prop
-    nv.writeLong(EE_ENC_MIN_GUIDE,100); // minimum guide duration
-    nv.writeLong(EE_ENC_A1_ZERO,0);     // absolute Encoder Axis1 zero
-    nv.writeLong(EE_ENC_A2_ZERO,0);     // absolute Encoder Axis2 zero
+    nv.writeLong(EE_ENC_RC_STA,20);     // 编码器短期平均采样数
+    nv.writeLong(EE_ENC_RC_LTA,200);    // 编码器长期平均采样数
+    nv.writeLong(EE_ENC_RC_RCOMP,0);    // 编码器速率补偿
+    nv.writeLong(EE_ENC_RC_INTP_P,1);   // 插值相位
+    nv.writeLong(EE_ENC_RC_INTP_M,0);   // 插值幅度
+    nv.writeLong(EE_ENC_RC_PROP,10);    // 比例 (P)
+    nv.writeLong(EE_ENC_MIN_GUIDE,100); // 最小导星持续时间
+    nv.writeLong(EE_ENC_A1_ZERO,0);     // 轴1 绝对编码器零点
+    nv.writeLong(EE_ENC_A2_ZERO,0);     [cite_start]// 轴2 绝对编码器零点 [cite: 170]
 #endif
 
     nv.commit();
@@ -254,35 +249,37 @@ void setup(void){
 
 Again:
   clearSerialChannel();
-
-  // look for On-Step
+  [cite_start]// 寻找 On-Step [cite: 178]
   Ser.print(":GVP#"); delay(100);
-  // make sure response is good
+  // 确保响应正常
   if (Ser.available() == 8 && 
       Ser.read() == 'O' && Ser.read() == 'n' && Ser.read() == '-' && Ser.read() == 'S' &&
       Ser.read() == 't' && Ser.read() == 'e' && Ser.read() == 'p' && Ser.read() == '#') {
 
-    // check fastest baud rate
-    Ser.print(":GB#"); delay(100);
+    // 检查最快波特率
+    Ser.print(":GB#");
+    delay(100);
     if (Ser.available() != 1) { serialRecvFlush(); goto Again; }
-    if (Ser.read() == '4' && serial_baud > 19200) serial_baud = 19200; // Mega2560 returns '4' for 19200 baud recommended
+    if (Ser.read() == '4' && serial_baud > 19200) serial_baud = 19200;
+    // Mega2560 返回 '4' 推荐使用 19200 波特率
 
-    // set fastest baud rate
-    Ser.print(HighSpeedCommsStr(serial_baud)); delay(100);
+    // 设置最快波特率
+    Ser.print(HighSpeedCommsStr(serial_baud));
+    delay(100);
     if (Ser.available() != 1) { serialRecvFlush(); goto Again; }
     if (Ser.read() != '1') goto Again;
-    
-    // we're all set, just change the baud rate to match OnStep
+    // 设置完成，只需更改波特率以匹配 OnStep
     serialBegin(serial_baud,serialSwap);
     VLF("WEM: WiFi Connection established");
   } else {
 #if LED_STATUS != OFF
     digitalWrite(LED_STATUS,LED_STATUS_OFF_STATE);
 #endif
-    // got nothing back, toggle baud rate and/or swap ports
+    [cite_start]// 没有收到回复，切换波特率和/或交换端口 [cite: 184]
     serialRecvFlush();
     tb++;
-    if (tb == 16) { tb=1; if (serialSwap == AUTO_OFF) serialSwap=AUTO_ON; else if (serialSwap == AUTO_ON) serialSwap=AUTO_OFF; }
+    if (tb == 16) { tb=1; if (serialSwap == AUTO_OFF) serialSwap=AUTO_ON; else if (serialSwap == AUTO_ON) serialSwap=AUTO_OFF;
+    }
     if (tb == 1) serialBegin(SERIAL_BAUD_DEFAULT,serialSwap);
     if (tb == 6) serialBegin(serial_baud,serialSwap);
     if (tb == 11) if (SERIAL_BAUD_DEFAULT == 9600) serialBegin(19200,serialSwap); else tb=15;
@@ -291,10 +288,12 @@ Again:
   
   // say hello
   VF("WEM: WiFi Addon "); V(FirmwareVersionMajor); V("."); V(FirmwareVersionMinor); VL(FirmwareVersionPatch);
-  VF("WEM: MCU = "); VLF(MCU_STR);
+  VF("WEM: MCU = ");
+  VLF(MCU_STR);
 
   VF("WEM: Access Point Enabled  = "); VL(accessPointEnabled);
-  VF("WEM: Station Enabled       = "); VL(stationEnabled);
+  VF("WEM: Station Enabled       = ");
+  VL(stationEnabled);
   VF("WEM: Station DHCP Enabled  = "); VL(stationDhcpEnabled);
 
   VF("WEM: Web Channel Timeout ms= "); VL(webTimeout);
@@ -302,17 +301,17 @@ Again:
 
   VF("WEM: WiFi STA SSID   = "); VL(wifi_sta_ssid);
   VF("WEM: WiFi STA PWD    = "); VL(wifi_sta_pwd);
-  VF("WEM: WiFi STA IP     = "); VL(wifi_sta_ip.toString());
+  VF("WEM: WiFi STA IP     = ");
+  VL(wifi_sta_ip.toString());
   VF("WEM: WiFi STA GATEWAY= "); VL(wifi_sta_gw.toString());
   VF("WEM: WiFi STA SN     = "); VL(wifi_sta_sn.toString());
-
   VF("WEM: WiFi AP SSID    = "); VL(wifi_ap_ssid);
-  VF("WEM: WiFi AP PWD     = "); VL(wifi_ap_pwd);
+  VF("WEM: WiFi AP PWD     = ");
+  VL(wifi_ap_pwd);
   VF("WEM: WiFi AP CH      = "); VL(wifi_ap_ch);
   VF("WEM: WiFi AP IP      = "); VL(wifi_ap_ip.toString());
   VF("WEM: WiFi AP GATEWAY = "); VL(wifi_ap_gw.toString());
   VF("WEM: WiFi AP SN      = "); VL(wifi_ap_sn.toString());
-
 TryAgain:
   
   if (accessPointEnabled && !stationEnabled) {
@@ -337,9 +336,10 @@ TryAgain:
   if ((stationEnabled) && (!stationDhcpEnabled)) WiFi.config(wifi_sta_ip, wifi_sta_gw, wifi_sta_sn);
   if (accessPointEnabled) WiFi.softAPConfig(wifi_ap_ip, wifi_ap_gw, wifi_ap_sn);
 
-  // wait for connection in station mode, if it fails fall back to access-point mode
+  [cite_start]// 在工作站模式下等待连接，如果失败则回退到热点模式 [cite: 202]
   if (!accessPointEnabled && stationEnabled) {
-    for (int i=0; i<8; i++) if (WiFi.status() != WL_CONNECTED) delay(1000); else break;
+    for (int i=0; i<8; i++) if (WiFi.status() != WL_CONNECTED) delay(1000);
+    else break;
     if (WiFi.status() != WL_CONNECTED) {
       VLF("WEM: Starting WiFi Station, failed");
       WiFi.disconnect(); delay(3000);
@@ -379,7 +379,6 @@ TryAgain:
   server.on("/wifi.htm", handleWifi);
   
   server.onNotFound(handleNotFound);
-
 #if STANDARD_COMMAND_CHANNEL == ON
   VLF("WEM: Starting port 9999 cmd svr");
   cmdSvr.begin();
@@ -395,10 +394,9 @@ TryAgain:
   VLF("WEM: Starting port 80 web svr");
   server.begin();
 
-  // allow time for the background servers to come up
+  // 留出时间让后台服务器启动
   delay(2000);
-
-  // clear the serial channel one last time
+  // 最后一次清除串口通道
   clearSerialChannel();
 
 #if ENCODERS == ON
@@ -417,34 +415,33 @@ void loop(void) {
 
 #if STANDARD_COMMAND_CHANNEL == ON
   // -------------------------------------------------------------------------------------------------------------------------------
-  // Standard IP connections on port 9999
+  [cite_start]// 端口 9999 上的标准 IP 连接 [cite: 213]
 
-  // disconnect client
+  // 断开客户端连接
   static unsigned long clientTime = 0;
   if (cmdSvrClient && (!cmdSvrClient.connected())) cmdSvrClient.stop();
   if (cmdSvrClient && ((long)(clientTime-millis())<0)) cmdSvrClient.stop();
-
-  // new client
+  // 新客户端
   if (!cmdSvrClient && (cmdSvr.hasClient())) {
-    // find free/disconnected spot
+    // 寻找空闲/断开连接的位置
     cmdSvrClient = cmdSvr.available();
     clientTime=millis()+2000UL;
   }
 
-  // check clients for data, if found get the command, pass to OnStep and pickup the response, then return the response to client
+  [cite_start]// 检查客户端是否有数据，如果找到则获取命令，传递给 OnStep 并提取响应，然后将响应返回给客户端 [cite: 216]
   while (cmdSvrClient && cmdSvrClient.connected() && (cmdSvrClient.available()>0)) {
     static char cmdBuffer[40]="";
     static int cmdBufferPos=0;
 
-    // get the data
+    // 获取数据
     byte b=cmdSvrClient.read();
     cmdBuffer[cmdBufferPos]=b; cmdBufferPos++; if (cmdBufferPos>39) cmdBufferPos=39; cmdBuffer[cmdBufferPos]=0;
-
-    // send cmd and pickup the response
+    // 发送命令并提取响应
     if (b == '#' || (strlen(cmdBuffer) == 1 && b == (char)6)) {
       char result[40]="";
-      processCommand(cmdBuffer,result,cmdTimeout);               // send cmd to OnStep, pickup response
-      if (strlen(result) > 0) { if (cmdSvrClient && cmdSvrClient.connected()) { cmdSvrClient.print(result); delay(2); } } // client response
+      processCommand(cmdBuffer,result,cmdTimeout);               // 发送命令给 OnStep，提取响应
+      if (strlen(result) > 0) { if (cmdSvrClient && cmdSvrClient.connected()) { cmdSvrClient.print(result);
+      delay(2); } } // 客户端响应
       cmdBuffer[0]=0; cmdBufferPos=0;
     } else idle();
   }
@@ -453,37 +450,35 @@ void loop(void) {
 
 #if PERSISTENT_COMMAND_CHANNEL == ON
   // -------------------------------------------------------------------------------------------------------------------------------
-  // Persistent IP connections on port 9998
+  [cite_start]// 端口 9998 上的持久 IP 连接 [cite: 221]
 
-  // disconnect client
+  // 断开客户端连接
   static unsigned long persistentClientTime = 0;
   if (persistentCmdSvrClient && (!persistentCmdSvrClient.connected())) persistentCmdSvrClient.stop();
   if (persistentCmdSvrClient && ((long)(persistentClientTime-millis())<0)) persistentCmdSvrClient.stop();
-
-  // new client
+  // 新客户端
   if (!persistentCmdSvrClient && (persistentCmdSvr.hasClient())) {
-    // find free/disconnected spot
+    // 寻找空闲/断开连接的位置
     persistentCmdSvrClient = persistentCmdSvr.available();
     persistentClientTime=millis()+120000UL;
   }
 
-  // check clients for data, if found get the command, pass to OnStep and pickup the response, then return the response to client
+  // 检查客户端是否有数据，如果找到则获取命令，传递给 OnStep 并提取响应，然后将响应返回给客户端
   while (persistentCmdSvrClient && persistentCmdSvrClient.connected() && (persistentCmdSvrClient.available()>0)) {
     static char cmdBuffer[40]="";
     static int cmdBufferPos=0;
 
-    // still active? push back disconnect by 2 minutes
+    // 仍然活跃？将断开连接时间推迟 2 分钟
     persistentClientTime=millis()+120000UL;
-
-    // get the data
+    // 获取数据
     byte b=persistentCmdSvrClient.read();
     cmdBuffer[cmdBufferPos]=b; cmdBufferPos++; if (cmdBufferPos>39) cmdBufferPos=39; cmdBuffer[cmdBufferPos]=0;
-
-    // send cmd and pickup the response
+    // 发送命令并提取响应
     if (b == '#' || (strlen(cmdBuffer) == 1 && b == (char)6)) {
       char result[40]="";
-      processCommand(cmdBuffer,result,cmdTimeout);               // send cmd to OnStep, pickup response
-      if (strlen(result) > 0) { if (persistentCmdSvrClient && persistentCmdSvrClient.connected()) { persistentCmdSvrClient.print(result); delay(2); } } // client response
+      processCommand(cmdBuffer,result,cmdTimeout);               // 发送命令给 OnStep，提取响应
+      if (strlen(result) > 0) { if (persistentCmdSvrClient && persistentCmdSvrClient.connected()) { persistentCmdSvrClient.print(result);
+      delay(2); } } // 客户端响应
       cmdBuffer[0]=0; cmdBufferPos=0;
     } else idle();
   }
@@ -493,11 +488,14 @@ void loop(void) {
 }
 
 const char* HighSpeedCommsStr(long baud) {
-  if (baud==115200) { return ":SB0#"; }
+  if (baud==115200) { return ":SB0#";
+  }
   if (baud==57600) { return ":SB1#"; }
-  if (baud==38400) { return ":SB2#"; }
+  if (baud==38400) { return ":SB2#";
+  }
   if (baud==28800) { return ":SB3#"; }
-  if (baud==19200) { return ":SB4#"; } else { return ":SB5#"; }
+  if (baud==19200) { return ":SB4#"; } else { return ":SB5#";
+  }
 }
 
 void idle() {
@@ -514,9 +512,10 @@ void serialBegin(long baudRate, int swap) {
   if (swap == ON || swap == AUTO_ON) swap=1; else swap=0;
 #ifdef ESP32
   // wemos d1 mini esp32
-  // not swapped: TX and RX on default pins
-  //     swapped: TX on gpio 5 and RX on gpio 23
-  if (swap) Ser.begin(baudRate,SERIAL_8N1,23,5); else Ser.begin(baudRate);
+  // 未交换: TX 和 RX 在默认引脚
+  //     交换: TX 在 gpio 5，RX 在 gpio 23
+  if (swap) Ser.begin(baudRate,SERIAL_8N1,23,5);
+  else Ser.begin(baudRate);
 #else
   Ser.begin(baudRate); if (swap) Ser.swap();
 #endif

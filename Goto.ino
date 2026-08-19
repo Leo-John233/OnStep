@@ -10,6 +10,8 @@ CommandErrors validateGoto() {
   if (trackingState == TrackingMoveTo)         return CE_GOTO_ERR_GOTO;
   if (guideDirAxis1 || guideDirAxis2)          return CE_MOUNT_IN_MOTION;
   if (faultAxis1 || faultAxis2)                return CE_SLEW_ERR_HARDWARE_FAULT;
+  // 位置参考不可信或处于恢复锁时，禁止普通 GOTO/Sync
+  if (!positionReady())                         return CE_SLEW_ERR_IN_STANDBY;
   return CE_NONE;
 }
 
@@ -46,7 +48,9 @@ CommandErrors syncEqu(double RA, double Dec) {
 
   // validate
   CommandErrors e=validateGoto();
-  if (e == CE_SLEW_ERR_IN_STANDBY && atHome) { trackingState=TrackingSidereal; enableStepperDrivers(); e=validateGoto(); }
+  if (e == CE_SLEW_ERR_IN_STANDBY && atHome && positionReady()) {
+    trackingState=TrackingSidereal; enableStepperDrivers(); e=validateGoto();
+  }
   if (e != CE_NONE) return e;
   e=validateGotoCoords(HA,Dec,a);
   if (e != CE_NONE) return e;
@@ -241,9 +245,16 @@ CommandErrors goToEqu(double RA, double Dec) {
 
   // validate
   CommandErrors e=validateGoto();
-  if (e == CE_SLEW_ERR_IN_STANDBY && atHome && timeWasSet && dateWasSet) { trackingState=TrackingSidereal; enableStepperDrivers(); e=validateGoto(); }
+  if (e == CE_SLEW_ERR_IN_STANDBY && atHome && timeWasSet && dateWasSet &&
+      positionReady()) {
+    trackingState=TrackingSidereal; enableStepperDrivers(); e=validateGoto();
+  }
 #ifndef CE_GOTO_ERR_GOTO_OFF
-  if (e == CE_GOTO_ERR_GOTO) { if (!abortGoto) abortGoto=StartAbortGoto; } 
+  if (e == CE_GOTO_ERR_GOTO) {
+    // 新目标只中止当前 Goto；结束后恢复当前 Goto 开始前的跟踪状态
+    gotoStartTrackingOnSuccess=false;
+    if (!abortGoto) abortGoto=StartAbortGoto;
+  }
 #endif
   if (e != CE_NONE) return e;
   e=validateGotoCoords(HA,Dec,a);
@@ -298,7 +309,13 @@ CommandErrors goToEqu(double RA, double Dec) {
     if (preferredPierSide == EAST) thisPierSide=PierSideEast;
   }
 
-  return goTo(Axis1,Axis2,Axis1Alt,Axis2Alt,thisPierSide);
+  const bool requestTrackingAfterSuccess =
+    trackingState == TrackingNone && timeWasSet && dateWasSet &&
+    positionReady() && parkStatus == NotParked && !isHoming();
+
+  CommandErrors result=goTo(Axis1,Axis2,Axis1Alt,Axis2Alt,thisPierSide);
+  if (result == CE_NONE) gotoStartTrackingOnSuccess=requestTrackingAfterSuccess;
+  return result;
 }
 
 // moves the mount to a new Altitude and Azmiuth (Alt,Azm) in degrees
@@ -376,6 +393,9 @@ CommandErrors goTo(double thisTargetAxis1, double thisTargetAxis2, double altTar
     if (toInstrAxis2(thisTargetAxis2,p) > axis2Settings.max) return CE_SLEW_ERR_OUTSIDE_LIMITS;
   #endif
 #endif
+  // 底层 GOTO 同时供 Home/Park 使用，不能自行决定开始跟踪
+  gotoStartTrackingOnSuccess=false;
+  gotoAbortState=GOTO_ABORT_NONE;
   lastTrackingState=trackingState;
 
   cli();
