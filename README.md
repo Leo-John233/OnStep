@@ -169,16 +169,16 @@ Custom modifications and maintenance:
 | 8/19 | **Leo‑John233** | [chore: 添加Git格式和换行规范](https://github.com/Leo-John233/OnStep/commit/0516095062dd4444a88e89ce97bbbacc912392eb) `0516095` | `多个目录` · 3 |
 | 8/19 | **Leo‑John233** | [Revert "Merge pull request #1 from Leo-John233/release-4.24-custom"](https://github.com/Leo-John233/OnStep/commit/beb3282f1d304f569302399b62d123d2b01fd792) `beb3282` | `多个目录` · 3824 |
 | 8/19 | **Leo‑John233** | [导入本地 OnStep 修改](https://github.com/Leo-John233/OnStep/commit/f9855fef0cefbb797602f72dc9d056fc1e79f7ce) `f9855fe` | `多个目录` · 3824 |
-| 8/19 | **Leo‑John233** | [测试worksapce](https://github.com/Leo-John233/OnStep/commit/88c316e5b66eea8b44c69e7199759d208fb208f5) `88c316e` | `Config.h` |
-| 8/19 | **Leo‑John233** | [测试合并](https://github.com/Leo-John233/OnStep/commit/d3f239041f1654c95f864574dd44b3b56274e272) `d3f2390` | `Config.h` |
-| 8/19 | **Leo‑John233** | [测试提交](https://github.com/Leo-John233/OnStep/commit/0c191e7fa3fee4ae5065f90006d0bdc0cdbf477d) `0c191e7` | `Config.h` |
-| 8/18 | **Leo‑John233** | [修改代码注释翻译](https://github.com/Leo-John233/OnStep/commit/ad1bbe9b84f3456a23084dcbe559b57cbd8d9f4e) `ad1bbe9` | `Validate.h + src` · 2 |
-| 8/18 | **Leo‑John233** | [Revert "恢复 OnStep 4.24 细分逻辑并关闭 Goto 细分"](https://github.com/Leo-John233/OnStep/commit/a2b2d442bb79c7d9ca9d4e1fa81b4ce2c2815219) `a2b2d44` | `多个目录` · 3 |
-| 8/18 | **Leo‑John233** | [恢复 OnStep 4.24 细分逻辑并关闭 Goto 细分](https://github.com/Leo-John233/OnStep/commit/f4a8d81a3286b2a6930678b35c78c4d76a0d2b8f) `f4a8d81` | `多个目录` · 3 |
-| 8/18 | **Leo‑John233** | [修复 MaxESP3 TMC2209 跟踪抖动](https://github.com/Leo-John233/OnStep/commit/82aaeb9d2136417827e8138a3bc1787b89e7010e) `82aaeb9` | `多个目录` · 4 |
-| 8/17 | **Leo‑John233** | [修改readme.md](https://github.com/Leo-John233/OnStep/commit/1cb705514a17d935de9d42ac6aec1241283c15b7) `1cb7055` | `example.md` |
-| 8/17 | **Leo‑John233** | [修改readme文件，添加了一个新的示例文件example.md](https://github.com/Leo-John233/OnStep/commit/db46a7778e6f459984e3c9ba7d2b2aed9b669ee5) `db46a77` | `example.md` |
-| 8/16 | **Leo‑John233** | [修改注释](https://github.com/Leo-John233/OnStep/commit/1049e170b126f82ac85f567ad918fa05d6b10c43) `1049e17` | `多个目录` · 4 |
+| 8/19 | **Leo‑John233** | [测试worksapce](https://github.com/Leo-John233/OnStep/commit/0a3eedbf33ab2d06989566d77051afb206fe5baa) `0a3eedb` | `Config.h` |
+| 8/19 | **Leo‑John233** | [测试合并](https://github.com/Leo-John233/OnStep/commit/fe9a6dbd1ac91cf32a8ed6a2ba96c42113489df2) `fe9a6db` | `Config.h` |
+| 8/19 | **Leo‑John233** | [测试提交](https://github.com/Leo-John233/OnStep/commit/3c2eaaa5f1d61fcbb2612250f5aa261ccc46b491) `3c2eaaa` | `Config.h` |
+| 8/18 | **Leo‑John233** | [修改代码注释翻译](https://github.com/Leo-John233/OnStep/commit/5fc867f367a6ee9b449d83eb8446cd7645e92fd7) `5fc867f` | `Validate.h + src` · 2 |
+| 8/18 | **Leo‑John233** | [Revert "恢复 OnStep 4.24 细分逻辑并关闭 Goto 细分"](https://github.com/Leo-John233/OnStep/commit/f5a31194dbf80fda74c04c584a99cb4bfe531183) `f5a3119` | `多个目录` · 3 |
+| 8/18 | **Leo‑John233** | [恢复 OnStep 4.24 细分逻辑并关闭 Goto 细分](https://github.com/Leo-John233/OnStep/commit/d184acaf144e202e8a7992b75c2e3e333468d930) `d184aca` | `多个目录` · 3 |
+| 8/18 | **Leo‑John233** | [修复 MaxESP3 TMC2209 跟踪抖动](https://github.com/Leo-John233/OnStep/commit/6225b7823af72f8b53050d54d1460bc0fcabee51) `6225b78` | `多个目录` · 4 |
+| 8/17 | **Leo‑John233** | [修改readme.md](https://github.com/Leo-John233/OnStep/commit/392c92cb37e5495872e87a13d26070eef8195e4e) `392c92c` | `example.md` |
+| 8/17 | **Leo‑John233** | [修改readme文件，添加了一个新的示例文件example.md](https://github.com/Leo-John233/OnStep/commit/f8af656fed8acf588f225d9c1c68fc05aff34f61) `f8af656` | `example.md` |
+| 8/16 | **Leo‑John233** | [修改注释](https://github.com/Leo-John233/OnStep/commit/d0c6b3b01e55a070adf85e688b9fcb340d987284) `d0c6b3b` | `多个目录` · 4 |
 <!-- RECENT_CHANGES:END -->
 
 ## 🟩 Repository Activity
