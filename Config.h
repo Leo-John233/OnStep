@@ -187,9 +187,9 @@
                                           // OFF：不额外使能电机（不改变上述回零策略）
 
 // 步进驱动器型号说明 (也可以看 ~/OnStep/src/sd_drivers/Models.h 获取更多型号): 
-// A4988, DRV8825, LV8729, S109, SSS TMC2209*, TMC2130* **, 和 TMC5160* ***
+// A4988, DRV8825, LV8729, S109, SSS TMC2209*, TMC2130* **, TMC5130* **, 和 TMC5160* ***
 // * = 加上 _QUIET 后缀 (例如 "TMC2130_QUIET") 表示开启 stealthChop 静音跟踪模式
-// ** = SSS TMC2130 如果你想软件设置电流(mA)，要把Vref电位器调到2.5V，而不是像通常那样调Vref来定电流。
+// ** = SSS TMC2130/TMC5130 如果你想软件设置电流(mA)，要把Vref电位器调到2.5V，而不是像通常那样调Vref来定电流。
 // *** = SSS TMC5160 必须在下面定义 AXISn_TMC_IRUN (IHOLD 等) 来设置电流。
 
 // 轴 1：赤经 / 方位(AXIS1 RA/AZM)
@@ -239,8 +239,8 @@
                                           //         经纬仪消旋: n = (圆周像素数 * 2)/360, 最小值
 #define AXIS3_SLEW_RATE_DESIRED       1.0 //    1.0, n, (度/秒) 最大速度，取决于处理器性能.                  Adjust
 
-#define AXIS3_DRIVER_MODEL            OFF //    OFF, TMC2130, TMC5160. 除这两款外保持OFF.                                     Option
-#define AXIS3_DRIVER_MICROSTEPS       OFF //    OFF, n. 跟踪细分,              针对 TMC2130, TMC5160.                         Option
+#define AXIS3_DRIVER_MODEL            OFF //    OFF, TMC2130, TMC5130, TMC5160. 除这些款外保持OFF.                             Option
+#define AXIS3_DRIVER_MICROSTEPS       OFF //    OFF, n. 跟踪细分,              针对 TMC2130, TMC5130, TMC5160.                 Option
 #define AXIS3_DRIVER_IHOLD            OFF //    OFF, n, (mA.) 静止电流.                                                       Option
 #define AXIS3_DRIVER_IRUN             OFF //    OFF, n, (mA.) 跟踪电流.                                                       Option
 #define AXIS3_DRIVER_POWER_DOWN       OFF //    OFF, ON 静止时电机断电.                                                        Option
@@ -255,8 +255,8 @@
 #define AXIS4_STEPS_PER_MICRON        0.5 //    0.5, n. Steps per micrometer. Figure this out by testing or other means.      Adjust
 #define AXIS4_SLEW_RATE_DESIRED       500 //    500, n, Where n=200..5000 (um/s.) Max microns/second. In DC mode, max pwr %   Adjust
 
-#define AXIS4_DRIVER_MODEL            OFF //    OFF, TMC2130, TMC5160. Leave OFF for all drivers models except these.         Option
-#define AXIS4_DRIVER_MICROSTEPS       OFF //    OFF, n. Microstep mode when tracking.                   For TMC2130, TMC5160. Option
+#define AXIS4_DRIVER_MODEL            OFF //    OFF, TMC2130, TMC5130, TMC5160. Leave OFF for all drivers models except these.  Option
+#define AXIS4_DRIVER_MICROSTEPS       OFF //    OFF, n. Microstep mode when tracking.               For TMC2130, TMC5130, TMC5160. Option
 #define AXIS4_DRIVER_IHOLD            OFF //    OFF, n, (mA.) Current standstill. OFF uses IRUN/2.0.                  "       Option
 #define AXIS4_DRIVER_IRUN             OFF //    OFF, n, (mA.) Current tracking, appropriate for stepper/driver/etc.   "       Option
 #define AXIS4_DRIVER_POWER_DOWN       OFF //    OFF, ON Powers off the motor at stand-still.                                  Option
@@ -273,8 +273,8 @@
 #define AXIS5_STEPS_PER_MICRON        0.5 //    0.5, n. Steps per micrometer. Figure this out by testing or other means.      Adjust
 #define AXIS5_SLEW_RATE_DESIRED       500 //    500, n, Where n=200..5000 (um/s.) Max microns/second. In DC mode, max pwr %   Adjust
 
-#define AXIS5_DRIVER_MODEL            OFF //    OFF, TMC2130, TMC5160. Leave OFF for all drivers models except these.         Option
-#define AXIS5_DRIVER_MICROSTEPS       OFF //    OFF, n. Microstep mode when tracking.                   For TMC2130, TMC5160. Option
+#define AXIS5_DRIVER_MODEL            OFF //    OFF, TMC2130, TMC5130, TMC5160. Leave OFF for all drivers models except these.  Option
+#define AXIS5_DRIVER_MICROSTEPS       OFF //    OFF, n. Microstep mode when tracking.               For TMC2130, TMC5130, TMC5160. Option
 #define AXIS5_DRIVER_IHOLD            OFF //    OFF, n, (mA.) Current standstill. OFF uses IRUN/2.0.                  "       Option
 #define AXIS5_DRIVER_IRUN             OFF //    OFF, n, (mA.) Current tracking, appropriate for stepper/driver/etc.   "       Option
 #define AXIS5_DRIVER_POWER_DOWN       OFF //    OFF, ON Powers off the motor at stand-still.                                  Option

@@ -1146,6 +1146,7 @@
   #include "src/sd_drivers/Init.TMC2130.h"
   #include "src/sd_drivers/Init.TMC2209.h"
   #include "src/sd_drivers/Init.TMC5160.h"
+  #include "src/sd_drivers/Init.TMC5130.h"
   #include "src/sd_drivers/Init.TMC_SPI.h"
   #include "src/sd_drivers/Init.GENERIC.h"
   #include "src/sd_drivers/Init.SERVO.h"

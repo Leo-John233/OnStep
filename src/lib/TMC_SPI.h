@@ -22,7 +22,7 @@ class tmcSpiDriver {
       if (!BBSpi.begin()) return false;
       uint32_t data_out=0;
 
-      // *** My notes are limited, see the TMC2130 datasheet for more info. ***
+      // *** My notes are limited, see the TMC2130/TMC5130 datasheet for more info. ***
     
       // IHOLDDELAY=0x00, IRUN=0x1F, IHOLD=0x1F (  0,   31,   31   ) or 50% (0,16,16)
       //                                         0b0000 11111 11111
@@ -69,7 +69,7 @@ class tmcSpiDriver {
       }
 
       // PWMCONF
-      if (_driver_model == TMC2130) {
+      if (_driver_model == TMC2130 || _driver_model == TMC5130) {
         // default=0x00050480UL
         data_out = (_pc_PWM_AMPL<<0)+(_pc_PWM_GRAD<<8)+(_pc_pwm_freq<<16)+(_pc_pwm_auto<<18)+(_pc_pwm_sym<<19)+(_pc_pwm_freewheel<<20);
         if (last_PWMCONF != data_out) {
@@ -91,7 +91,7 @@ class tmcSpiDriver {
       // CHOPCONF
       if (intpol) _cc_intpol=1; else _cc_intpol=0; // set interpolation bit
       // default=0x00008008UL
-      if (_driver_model == TMC2130) _last_chop_config=(_cc_toff<<0)+(_cc_hstart<<4)+(_cc_hend<<7)+(_cc_rndtf<<13)+(_cc_tbl<<15)+(_cc_vsense<<17)+(_cc_vhighfs<<18)+(_cc_vhighchm<<19)+(_cc_intpol<<28);
+      if (_driver_model == TMC2130 || _driver_model == TMC5130) _last_chop_config=(_cc_toff<<0)+(_cc_hstart<<4)+(_cc_hend<<7)+(_cc_rndtf<<13)+(_cc_tbl<<15)+(_cc_vsense<<17)+(_cc_vhighfs<<18)+(_cc_vhighchm<<19)+(_cc_intpol<<28);
       // default=0x10410150UL
       if (_driver_model == TMC5160) _last_chop_config=(_cc_toff<<0)+(_cc_hstart<<4)+(_cc_hend<<7)+(_cc_tbl<<15)+(_cc_vhighfs<<18)+(_cc_vhighchm<<19)+(_cc_tpfd<<20)+(_cc_intpol<<28);
       if (micro_step_mode != 255) {
@@ -131,7 +131,7 @@ class tmcSpiDriver {
 
     bool refresh_CHOPCONF(byte micro_step_mode) {
       // default=0x00008008UL
-      if (_driver_model == TMC2130) _last_chop_config=(_cc_toff<<0)+(_cc_hstart<<4)+(_cc_hend<<7)+(_cc_rndtf<<13)+(_cc_tbl<<15)+(_cc_vsense<<17)+(_cc_vhighfs<<18)+(_cc_vhighchm<<19)+(_cc_intpol<<28);
+      if (_driver_model == TMC2130 || _driver_model == TMC5130) _last_chop_config=(_cc_toff<<0)+(_cc_hstart<<4)+(_cc_hend<<7)+(_cc_rndtf<<13)+(_cc_tbl<<15)+(_cc_vsense<<17)+(_cc_vhighfs<<18)+(_cc_vhighchm<<19)+(_cc_intpol<<28);
       // default=0x10410150UL
       if (_driver_model == TMC5160) _last_chop_config=(_cc_toff<<0)+(_cc_hstart<<4)+(_cc_hend<<7)+(_cc_tbl<<15)+(_cc_vhighfs<<18)+(_cc_vhighchm<<19)+(_cc_tpfd<<20)+(_cc_intpol<<28);
 
@@ -188,7 +188,7 @@ class tmcSpiDriver {
     bool set_PWMCONF_pwm_freq(int v) { if ((v >= 0) && (v <= 3))      { _pc_pwm_freq     = v; return true; } return false; }
     bool set_PWMCONF_pwm_auto(int v) { if ((v >= 0) && (v <= 1))      { _pc_pwm_auto     = v; return true; } return false; }
     bool set_PWMCONF_pwm_freewheel(int v) { if ((v >= 0) && (v <= 1)) { _pc_pwm_freewheel= v; return true; } return false; }
-    // TMC2130 specific
+    // TMC2130/TMC5130 specific
     bool set_PWMCONF_PWM_AMPL(int v) { if ((v >= 0) && (v <= 255))    { _pc_PWM_AMPL     = v; return true; } return false; }
     bool set_PWMCONF_pwm_sym(int v)  { if ((v >= 0) && (v <= 1))      { _pc_pwm_sym      = v; return true; } return false; }
     // TMC5160/5161 specific
@@ -283,7 +283,7 @@ class tmcSpiDriver {
 
     bbspi BBSpi;
     int _driver_model = 0;
-    float _rsense = 0.11+0.02; // default for TMC2130
+    float _rsense = 0.11+0.02; // default for TMC2130/TMC5130
 
     const static uint8_t WRITE          = 0x80; // write flag
     const static uint8_t REG_GCONF      = 0x00;
@@ -334,7 +334,7 @@ class tmcSpiDriver {
     unsigned long _pc_pwm_freq = 0x01; // default=1,   range 0 to 3   (PWM frequency 0: fpwm=2/1024 fclk, 1: fpwm=2/683 fclk, 2: fpwm=2/512 fclk, 3: fpwm=2/410 fclk)
     unsigned long _pc_pwm_auto = 0x01; // default=1,   range 0 to 1   (PWM automatic current control 0: off, 1: on)
     unsigned long _pc_pwm_freewheel=0x01; //default=1, range 0 to 3   (PWM freewheel 0: normal, 1: freewheel, 2:LS short, 3: HS short)
-    // TMC2130 specific
+    // TMC2130/TMC5130 specific
     unsigned long _pc_PWM_AMPL = 0x80; // default=128, range 0 to 255 (PWM amplitude or switch back amplitude if pwm_auto=1)
     unsigned long _pc_pwm_sym  = 0x00; // default=0,   range 0 to 1   (PWM symmetric 0: value may change during cycle, 1: enforce; 0: disable autograd on TMC5160/5161)
     // TMC5160 specific

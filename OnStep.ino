@@ -160,7 +160,7 @@ weather ambient;
   #endif
 #endif
 
-// 支持 SPI 模式下的 TMC2130、TMC5160 等步进电机驱动器
+// 支持 SPI 模式下的 TMC2130、TMC5130、TMC5160 等步进电机驱动器
 #if (AXIS1_DRIVER_MODEL == TMC_SPI && AXIS2_DRIVER_MODEL == TMC_SPI) || \
     (ROTATOR == ON && AXIS3_DRIVER_MODEL == TMC_SPI) || \
     (FOCUSER1 == ON && AXIS4_DRIVER_MODEL == TMC_SPI) || \
