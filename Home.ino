@@ -72,7 +72,6 @@ void checkHome() {
 
     if (e1 != CE_NONE || e2 != CE_NONE) {
       findHomeMode = FH_OFF;
-      safetyLimitsOn = true;
       generalError = ERR_LIMIT_SENSE;
       stopSlewingAndTracking(SS_ALL_FAST);
       VLF("MSG: Homing phase 3 failed");
@@ -245,8 +244,6 @@ CommandErrors goHome(bool fast) {
     if (e == CE_NONE) VLF("MSG: Homing started phase 2"); else VLF("MSG: Homing start phase 2 failed");
   }
   if (e != CE_NONE) {
-    findHomeMode = FH_OFF;
-    safetyLimitsOn = true;
     stopSlewingAndTracking(SS_ALL_FAST);
   }
   return e;
