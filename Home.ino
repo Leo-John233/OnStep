@@ -124,9 +124,9 @@ void checkHome() {
       atHome=true;
     #endif
 
-    // 真实回原点完成后，所有结构类型都重新建立可信坐标基准
+    // 真实回原点完成后重新建立可信坐标基准；沿用原版 OnStep 的限位时序，
+    // 自动 Home 成功后保持坐标软件限位关闭，直到原版路径再次启用。
     completePositionRecovery();
-    safetyLimitsOn = true;
     abortGoto = 0;
     lastTrackingState = TrackingNone;
     abortTrackingState = TrackingNone;
