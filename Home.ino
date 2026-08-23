@@ -250,8 +250,6 @@ CommandErrors goHome(bool fast) {
 #else
   if (e != CE_NONE) return e;
 
-  if (positionHomeReturnOnly()) safetyLimitsOn=false;
-
   abortTrackingState=trackingState;
 
   #if AXIS2_TANGENT_ARM == ON
