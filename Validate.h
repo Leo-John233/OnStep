@@ -1185,6 +1185,26 @@
     #define AXIS2_DRIVER_MICROSTEPS_GOTO AXIS2_DRIVER_MICROSTEPS
   #endif
 
+  // MaxESP3 等面向 SPI 设计的控制器会让 Axis1/Axis2 共用 M0/M1。
+  // 独立模式 TMC2209 若运行时切换细分，会同时改变两个物理驱动器，而两个
+  // 电机 ISR 的软件步长仍分别变化。两轴因此必须使用相同且固定的跟踪细分。
+  // TMC5160 SPI 由各自独立的 CS 选择，不受这一限制。
+  #if defined(AXIS12_DRIVER_MODE_PINS_SHARED) && (AXIS1_DRIVER_MODEL == TMC2209 || AXIS2_DRIVER_MODEL == TMC2209)
+    #if AXIS1_DRIVER_MODEL != TMC2209 || AXIS2_DRIVER_MODEL != TMC2209
+      #error "Configuration (Config.h): shared M0/M1 pins require TMC2209 on both Axis1 and Axis2."
+    #endif
+    #if AXIS1_DRIVER_MICROSTEPS != AXIS2_DRIVER_MICROSTEPS
+      #error "Configuration (Config.h): shared TMC2209 M0/M1 pins require equal Axis1/Axis2 tracking microsteps."
+    #endif
+    #if AXIS1_DRIVER_MICROSTEPS_GOTO != OFF || AXIS2_DRIVER_MICROSTEPS_GOTO != OFF
+      #warning "Shared standalone TMC2209 M0/M1 pins: runtime Goto microstep switching is disabled; tracking microsteps are used for all motion."
+      #undef AXIS1_DRIVER_MICROSTEPS_GOTO
+      #define AXIS1_DRIVER_MICROSTEPS_GOTO OFF
+      #undef AXIS2_DRIVER_MICROSTEPS_GOTO
+      #define AXIS2_DRIVER_MICROSTEPS_GOTO OFF
+    #endif
+  #endif
+
 #else
   #warning "Configuration (Config.h): Stepper drivers for Axis1 and Axis2 are not defined.  Be sure to properly configure micro-step mode, Vref/current, etc. manually with shunts, dip-switches, as required."
 #endif

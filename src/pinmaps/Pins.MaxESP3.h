@@ -71,6 +71,10 @@
 #define Axis2_DECAY    Axis2_M2     // Decay mode(衰变模式)
 #define Axis2_HOME         Aux6     // Sense home position(感知原点位置)
 
+// M0/M1 are shared MOSI/SCK nets. SPI drivers use independent CS pins, while
+// standalone drivers such as TMC2209 must keep both axes at one microstep mode.
+#define AXIS12_DRIVER_MODE_PINS_SHARED
+
 // For rotator stepper driver
 #define Axis3_EN            OFF     // No enable pin control (always enabled)
 #define Axis3_STEP          OFF     // Step(原始值IO2)
