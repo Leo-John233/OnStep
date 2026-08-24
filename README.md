@@ -1,6 +1,6 @@
 # OnStep Telescope Controller — Custom
 
-基于 [hjd1964/OnStep](https://github.com/hjd1964/OnStep) `release-4.24` 开发的自定义 OnStep 固件
+基于 [hjd1964/OnStep](https://github.com/hjd1964/OnStep) `release-4.24` 修改开发的 OnStep 固件
 
 本项目主要用于自制谐波赤道仪及 MaxESP3 控制器，在原始 OnStep 4.24 基础上针对实际硬件和使用需求进行了修改
 
