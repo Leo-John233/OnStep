@@ -902,10 +902,10 @@ void loop2() {
 // SS_LIMIT_AXIS2_MAX 停止 GOTO + 螺旋搜寻 + 跟踪，并停止/阻止正向的赤纬/高度角导星
 void stopSlewingAndTracking(StopSlewActions ss) {
 
-  // 人工全停以及可能造成位置丢失的硬停止，都必须显式取消 Home 状态机
-  // 硬停止继续保持软件限位关闭，人工停止沿用原版 Home 失败后的限位时序
-  if (isHoming() && (ss == SS_ALL_FAST || ss == SS_LIMIT_HARD || ss == SS_LIMIT_PHYSICAL)) {
-    requestHomeAbort(ss == SS_ALL_FAST);
+  // 可能造成位置丢失的硬停止必须显式取消 Home 状态机
+  // 人工停止由命令入口单独请求，避免内部 SS_ALL_FAST 改变原有 Home 失败路径
+  if (isHoming() && (ss == SS_LIMIT_HARD || ss == SS_LIMIT_PHYSICAL)) {
+    requestHomeAbort(false);
   }
 
   // 驱动器硬故障可能造成丢步，必须重新建立位置基准
