@@ -1469,13 +1469,14 @@ if (command[1] == 'S' && parameter[0] == 0)  {
 // :Qe# Qw#   Halt east/westward Slews
 //            Returns: Nothing
         if ((command[1] == 'e' || command[1] == 'w') && parameter[0] == 0) {
-          stopGuideAxis1();
+          // Home 是双轴状态机，人工停止任一轴都应取消整个 Home
+          if (isHoming()) stopSlewingAndTracking(SS_ALL_FAST); else stopGuideAxis1();
           boolReply=false;
         } else
 // :Qn# Qs#   Halt north/southward Slews
 //            Returns: Nothing
         if ((command[1] == 'n' || command[1] == 's') && parameter[0] == 0) {
-          stopGuideAxis2();
+          if (isHoming()) stopSlewingAndTracking(SS_ALL_FAST); else stopGuideAxis2();
           boolReply=false;
         } else commandError=CE_CMD_UNKNOWN;
       } else

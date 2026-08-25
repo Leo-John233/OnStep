@@ -6,6 +6,8 @@
 // 1.更新状态机枚举，必须包含 FH_IDLE2 和 FH_OFFSET
 enum findHomeModes { FH_OFF, FH_FAST, FH_IDLE, FH_SLOW, FH_IDLE2, FH_OFFSET, FH_DONE };
 findHomeModes findHomeMode = FH_OFF;
+bool homeAbortRequested = false;
+bool homeAbortRestoreSafetyLimits = true;
 int PierSideStateAxis1 = LOW;
 int PierSideStateAxis2 = LOW;
 unsigned long findHomeTimeout = 0L;
@@ -15,6 +17,32 @@ unsigned long offsetTimeoutAxis1 = 0L;
 unsigned long offsetTimeoutAxis2 = 0L;
 
 void checkHome() {
+  // 人工停止或硬故障一旦请求取消 Home，就只负责让双轴安全停稳
+  // 取消路径不得再经过任何正常阶段转换，更不能进入 FH_DONE 恢复位置可信状态
+  if (homeAbortRequested) {
+    stopGuideAxis1();
+    stopGuideAxis2();
+    offsetTimeoutAxis1 = 0;
+    offsetTimeoutAxis2 = 0;
+
+    if (guideDirAxis1 == 0 && guideDirAxis2 == 0) {
+      findHomeMode = FH_OFF;
+      homeAbortRequested = false;
+      findHomeTimeout = 0;
+      safetyLimitsOn = homeAbortRestoreSafetyLimits;
+      homeAbortRestoreSafetyLimits = true;
+      trackingState = TrackingNone;
+      lastTrackingState = TrackingNone;
+      abortTrackingState = TrackingNone;
+      trackingSyncSeconds = 0;
+      gotoAbortState = GOTO_ABORT_NONE;
+      gotoStartTrackingOnSuccess = false;
+      atHome = false;
+      VLF("MSG: Homing aborted; Home/Set Home required");
+    }
+    return;
+  }
+
   // 1. 第一/第二阶段的超时与错误检测
   if (findHomeMode == FH_FAST || findHomeMode == FH_SLOW) {
     if ((long)(millis()-findHomeTimeout) > 0L || (guideDirAxis1 == 0 && guideDirAxis2 == 0)) {
@@ -152,6 +180,35 @@ void StopAxis2() {
 
 #endif
 
+// 取消正在执行的 Home，停止过程中以及停稳后都保持位置参考不可信
+// 只有重新完整 Find Home 或用户确认机械位置后 Set Home 才能解除普通 GOTO 锁
+void requestHomeAbort(bool restoreSafetyLimits) {
+  bool homingActive = homeMount;
+
+#if HOME_SENSE != OFF
+  if (findHomeMode != FH_OFF) {
+    if (!homeAbortRequested) homeAbortRestoreSafetyLimits = restoreSafetyLimits;
+    else homeAbortRestoreSafetyLimits = homeAbortRestoreSafetyLimits && restoreSafetyLimits;
+    homeAbortRequested = true;
+    offsetTimeoutAxis1 = 0;
+    offsetTimeoutAxis2 = 0;
+    homingActive = true;
+  }
+#endif
+
+  if (!homingActive) return;
+
+  invalidatePositionReference();
+  gotoStartTrackingOnSuccess = false;
+  abortTrackingState = TrackingNone;
+  trackingSyncSeconds = 0;
+  atHome = false;
+  if (trackingState == TrackingMoveTo) gotoAbortState = GOTO_ABORT_POSITION_LOST;
+  stopGuideAxis1();
+  stopGuideAxis2();
+  VLF("MSG: Homing abort requested");
+}
+
 // moves telescope to the home position, then stops tracking
 // 将望远镜移回初始位置，然后停止跟踪
 CommandErrors goHome(bool fast) {
@@ -186,6 +243,9 @@ CommandErrors goHome(bool fast) {
   if (e == CE_SLEW_ERR_IN_STANDBY) e = CE_NONE;
 
   if (findHomeMode != FH_OFF) return CE_MOUNT_IN_MOTION;
+
+  homeAbortRequested=false;
+  homeAbortRestoreSafetyLimits=true;
 
   // stop tracking
   // 停止跟踪
