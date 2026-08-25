@@ -1,81 +1,57 @@
 from __future__ import annotations
 
+import fnmatch
 import html
+import json
 import os
+import re
 import subprocess
 from collections import Counter
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
+from functools import lru_cache
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-
 # ============================================================
-# 基础配置
+# 配置
 # ============================================================
 
-ROOT = Path(__file__).resolve().parents[2]
-
-# GitHub Pages 最终部署目录
+ROOT = Path(__file__).resolve().parents[2] if ".github" in str(Path(__file__).resolve()) else Path.cwd()
 OUTPUT_DIR = ROOT / "site"
 
-# 自动生成的文件
-RECENT_SVG = OUTPUT_DIR / "recent-changes.svg"
-ACTIVITY_SVG = OUTPUT_DIR / "repository-activity.svg"
-STATISTICS_SVG = OUTPUT_DIR / "repository-statistics.svg"
-INDEX_HTML = OUTPUT_DIR / "index.html"
-
-# 最近代码修改统计天数
-RECENT_DAYS = 7
-
-# Contribution Graph 读取历史范围
-RECENT_HISTORY_DAYS = 370
-
-# 最近修改最多显示多少条
-MAX_RECENT_ROWS = 12
-
-# 完整历史贡献者最多显示多少名
-TOP_CONTRIBUTORS = 6
-
-# 时区
-TIMEZONE_NAME = os.getenv(
-    "ACTIVITY_TIMEZONE",
-    "Asia/Shanghai",
-)
-
+BASE_BRANCH = os.getenv("ACTIVITY_BASE_BRANCH", "release-4.24")
+BRANCH_PATTERN = os.getenv("ACTIVITY_BRANCH_PATTERN", "release-*")
+TIMEZONE_NAME = os.getenv("ACTIVITY_TIMEZONE", "Asia/Shanghai")
 TZ = ZoneInfo(TIMEZONE_NAME)
 
-
-# ============================================================
-# 不参与“有效代码修改”统计的文件
-# ============================================================
+RECENT_DAYS = 7
+RECENT_HISTORY_DAYS = 370
+MAX_RECENT_ROWS = 12
+TOP_CONTRIBUTORS = 6
 
 IGNORED_FILES = {
     "README.md",
     "assets/repository-activity.svg",
     "assets/repository-statistics.svg",
     "assets/recent-changes.svg",
+    "assets/branch-statistics.svg",
     "docs/activity.html",
     "docs/activity-data.json",
 }
 
 IGNORED_PREFIXES = (
     ".github/",
+    "site/",
 )
 
-# 自动提交历史
 AUTO_COMMIT_MESSAGES = {
     "docs: auto-update repository activity",
 }
 
-# Bot 作者
 BOT_AUTHORS = {
     "github-actions[bot]",
+    "dependabot[bot]",
 }
-
-
-# ============================================================
-# 作者名称统一
-# ============================================================
 
 AUTHOR_ALIASES = {
     "Leo-John": "Leo-John233",
@@ -83,187 +59,161 @@ AUTHOR_ALIASES = {
     "Leo-John233": "Leo-John233",
 }
 
-
 # ============================================================
-# Git
+# Git 辅助
 # ============================================================
 
-def git(*args: str) -> str:
-    """
-    执行 Git 命令并返回 UTF-8 文本结果。
-    """
 
+def git(*args: str, check: bool = True) -> str:
     result = subprocess.run(
-        [
-            "git",
-            "-c",
-            "core.quotepath=false",
-            *args,
-        ],
+        ["git", "-c", "core.quotepath=false", *args],
         cwd=ROOT,
-        check=True,
+        check=False,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
         encoding="utf-8",
     )
-
+    if check and result.returncode != 0:
+        raise RuntimeError(
+            "Git command failed:\n"
+            + "git "
+            + " ".join(args)
+            + "\n"
+            + result.stderr.strip()
+        )
     return result.stdout
 
 
+def git_ok(*args: str) -> bool:
+    result = subprocess.run(
+        ["git", *args],
+        cwd=ROOT,
+        check=False,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    return result.returncode == 0
+
+
+def branch_ref(branch: str) -> str:
+    remote_ref = f"refs/remotes/origin/{branch}"
+    if git_ok("show-ref", "--verify", "--quiet", remote_ref):
+        return f"origin/{branch}"
+    return branch
+
+
+def discover_branches() -> list[str]:
+    raw = git(
+        "for-each-ref",
+        "--format=%(refname:short)",
+        "refs/remotes/origin/",
+    )
+
+    branches: list[str] = []
+    for line in raw.splitlines():
+        value = line.strip()
+        if not value or value in {"origin/HEAD", "origin"}:
+            continue
+        if not value.startswith("origin/"):
+            continue
+        branch = value[len("origin/") :]
+        if branch == "HEAD":
+            continue
+        if fnmatch.fnmatch(branch, BRANCH_PATTERN):
+            branches.append(branch)
+
+    # 本地测试/手动运行时，如果 origin 远程引用不存在，也允许读取本地分支。
+    if not branches:
+        local_raw = git("for-each-ref", "--format=%(refname:short)", "refs/heads/")
+        for line in local_raw.splitlines():
+            branch = line.strip()
+            if branch and fnmatch.fnmatch(branch, BRANCH_PATTERN):
+                branches.append(branch)
+
+    branches = sorted(set(branches))
+    if BASE_BRANCH in branches:
+        branches.remove(BASE_BRANCH)
+        branches.insert(0, BASE_BRANCH)
+
+    if not branches:
+        raise RuntimeError(
+            f"没有找到匹配 {BRANCH_PATTERN!r} 的分支。"
+            "请确认 Workflow 已 fetch 全部远程分支。"
+        )
+
+    return branches
+
+
 # ============================================================
-# 通用辅助
+# 文本与 Commit 辅助
 # ============================================================
+
 
 def canonical_author(author: str) -> str:
-    """
-    统一同一作者的不同 Git 名称。
-    """
-
     author = author.strip()
-
-    return AUTHOR_ALIASES.get(
-        author,
-        author,
-    )
+    return AUTHOR_ALIASES.get(author, author)
 
 
 def should_ignore_file(path: str) -> bool:
-    """
-    判断文件是否应该从“有效代码修改”统计中排除。
-    """
-
-    if path in IGNORED_FILES:
-        return True
-
-    return any(
-        path.startswith(prefix)
-        for prefix in IGNORED_PREFIXES
+    normalized = path.replace("\\", "/")
+    return normalized in IGNORED_FILES or any(
+        normalized.startswith(prefix) for prefix in IGNORED_PREFIXES
     )
 
 
 def is_bot_commit(commit: dict) -> bool:
-    """
-    判断是否属于自动生成的机器人提交。
-    """
-
-    author = canonical_author(
-        commit["author"]
+    author = canonical_author(commit.get("author", ""))
+    subject = commit.get("subject", "")
+    email_addr = commit.get("email", "").lower()
+    return (
+        author in BOT_AUTHORS
+        or subject in AUTO_COMMIT_MESSAGES
+        or "[bot]" in author.lower()
+        or "noreply@github.com" in email_addr and "actions" in author.lower()
     )
 
-    if author in BOT_AUTHORS:
-        return True
-
-    if commit["subject"] in AUTO_COMMIT_MESSAGES:
-        return True
-
-    return False
-
-
-def truncate(
-    text: str,
-    limit: int,
-) -> str:
-    """
-    限制文本长度，避免 SVG 中列内容重叠。
-    """
-
-    text = text.strip()
-
-    if len(text) <= limit:
-        return text
-
-    return text[: limit - 1] + "…"
-
-
-def svg_text(text: str) -> str:
-    """
-    SVG/XML 文本转义。
-    """
-
-    return html.escape(
-        str(text),
-        quote=True,
-    )
-
-
-# ============================================================
-# Git Log 解析
-# ============================================================
 
 def parse_log(raw: str) -> list[dict]:
-    """
-    解析 git log 输出。
-
-    字段分隔符：
-        \\x1f
-
-    Commit 分隔符：
-        \\x1e
-    """
-
     commits: list[dict] = []
-
     for record in raw.split("\x1e"):
-
         record = record.strip()
-
         if not record:
             continue
-
-        parts = record.split(
-            "\x1f",
-            4,
-        )
-
+        parts = record.split("\x1f", 4)
         if len(parts) != 5:
             continue
-
-        (
-            sha,
-            author,
-            email_address,
-            iso_time,
-            subject,
-        ) = parts
-
+        sha, author, email_addr, iso_time, subject = parts
         try:
-            commit_time = datetime.fromisoformat(
-                iso_time.strip()
-            ).astimezone(TZ)
-
+            commit_time = datetime.fromisoformat(iso_time.strip()).astimezone(TZ)
         except ValueError:
             continue
-
         commits.append(
             {
                 "sha": sha.strip(),
                 "short_sha": sha.strip()[:7],
-                "author": canonical_author(
-                    author
-                ),
-                "email": email_address.strip(),
+                "author": canonical_author(author),
+                "email": email_addr.strip(),
                 "subject": subject.strip(),
                 "date": commit_time.date(),
+                "datetime": commit_time,
             }
         )
-
     return commits
 
 
-# ============================================================
-# Commit 修改文件
-# ============================================================
+def load_log(ref: str, since_days: int | None = None) -> list[dict]:
+    args = ["log", ref]
+    if since_days is not None:
+        args.append(f"--since={since_days} days ago")
+    args.append(
+        "--pretty=format:%H%x1f%aN%x1f%aE%x1f%aI%x1f%s%x1e"
+    )
+    return parse_log(git(*args))
 
-def get_commit_files(
-    sha: str,
-) -> list[str]:
-    """
-    获取某次 Commit 实际修改的有效文件。
 
-    README、GitHub Actions、自生成 SVG 等内容不会计入。
-    """
-
+@lru_cache(maxsize=None)
+def get_commit_files(sha: str) -> tuple[str, ...]:
     raw = git(
         "diff-tree",
         "--root",
@@ -273,1874 +223,743 @@ def get_commit_files(
         "-z",
         sha,
     )
-
     result: list[str] = []
-
     for path in raw.split("\0"):
-
         path = path.strip()
-
-        if not path:
-            continue
-
-        if should_ignore_file(path):
-            continue
-
-        result.append(path)
-
-    return result
+        if path and not should_ignore_file(path):
+            result.append(path)
+    return tuple(result)
 
 
-# ============================================================
-# 文件修改范围
-# ============================================================
-
-def get_scope(
-    path: str,
-) -> str:
-    """
-    根据路径得到主要修改范围。
-    """
-
-    path = path.replace(
-        "\\",
-        "/",
-    )
-
-    parts = path.split("/")
-
+def get_scope(path: str) -> str:
+    parts = path.replace("\\", "/").split("/")
     if not parts:
         return "-"
-
-    # 原始固件/OnStepX/... -> OnStepX
-    if (
-        parts[0] == "原始固件"
-        and len(parts) >= 2
-    ):
+    if parts[0] == "原始固件" and len(parts) >= 2:
         return parts[1]
-
     return parts[0]
 
 
-def summarize_scope(
-    files: list[str],
-) -> str:
-    """
-    将一个 Commit 的多个文件压缩为简洁范围描述。
-    """
-
+def summarize_scope(files: list[str] | tuple[str, ...]) -> str:
     if not files:
         return "-"
-
-    # 单文件直接显示路径
     if len(files) == 1:
-
-        path = files[0].replace(
-            "\\",
-            "/",
-        )
-
-        if path.startswith(
-            "原始固件/"
-        ):
-            path = path[
-                len("原始固件/"):
-            ]
-
+        path = files[0].replace("\\", "/")
+        if path.startswith("原始固件/"):
+            path = path[len("原始固件/") :]
         return path
 
     scopes: list[str] = []
-
     for path in files:
-
-        scope = get_scope(
-            path
-        )
-
+        scope = get_scope(path)
         if scope not in scopes:
             scopes.append(scope)
 
     if len(scopes) == 1:
         return scopes[0]
-
     if len(scopes) == 2:
-        return (
-            f"{scopes[0]} + "
-            f"{scopes[1]}"
-        )
-
+        return f"{scopes[0]} + {scopes[1]}"
     return "多个目录"
 
 
-# ============================================================
-# 最近一年有效代码历史
-# ============================================================
-
-def load_recent_history() -> list[dict]:
-    """
-    读取最近约一年历史。
-
-    用于：
-    1. 最近 7 天代码修改
-    2. 最近一年 Contribution Graph
-
-    这里会逐 Commit 检查文件修改范围，
-    所以只处理约一年历史，避免对数千条历史重复 diff-tree。
-    """
-
-    raw = git(
-        "log",
-        f"--since={RECENT_HISTORY_DAYS} days ago",
-        (
-            "--pretty=format:"
-            "%H%x1f"
-            "%aN%x1f"
-            "%aE%x1f"
-            "%aI%x1f"
-            "%s%x1e"
-        ),
-    )
-
+def load_recent_history(ref: str) -> list[dict]:
     result: list[dict] = []
-
-    for commit in parse_log(raw):
-
-        # 排除自动机器人提交
+    for commit in load_log(ref, RECENT_HISTORY_DAYS):
         if is_bot_commit(commit):
             continue
-
-        files = get_commit_files(
-            commit["sha"]
-        )
-
-        # 只修改 README / .github / SVG 等内容时不统计
+        files = get_commit_files(commit["sha"])
         if not files:
             continue
-
         result.append(
             {
                 **commit,
-                "files": files,
+                "files": list(files),
+                "scope": summarize_scope(files),
                 "file_count": len(files),
-                "scope": summarize_scope(
-                    files
-                ),
             }
         )
-
     return result
 
 
-# ============================================================
-# 完整 Git 历史
-# ============================================================
-
-def load_full_history() -> list[dict]:
-    """
-    读取当前分支全部可达 Git 历史。
-
-    用于：
-    - Total commits
-    - Contributors
-    - Repository history
-    - Top contributors
-
-    这里只执行一次 git log，
-    不会对 4000+ Commit 逐个执行 diff-tree。
-    """
-
-    raw = git(
-        "log",
-        (
-            "--pretty=format:"
-            "%H%x1f"
-            "%aN%x1f"
-            "%aE%x1f"
-            "%aI%x1f"
-            "%s%x1e"
-        ),
-    )
-
-    return parse_log(raw)
+def load_full_history(ref: str) -> list[dict]:
+    return [commit for commit in load_log(ref) if not is_bot_commit(commit)]
 
 
-# ============================================================
-# 最近 7 天提交
-# ============================================================
-
-def get_recent_commits(
-    history: list[dict],
-) -> list[dict]:
-    """
-    从有效代码历史中筛选最近 N 天。
-    """
-
-    today = datetime.now(
-        TZ
-    ).date()
-
-    start_date = (
-        today
-        - timedelta(
-            days=RECENT_DAYS - 1
-        )
-    )
-
-    return [
-        commit
-        for commit in history
-        if (
-            start_date
-            <= commit["date"]
-            <= today
-        )
-    ]
+def recent_commits(history: list[dict]) -> list[dict]:
+    today = datetime.now(TZ).date()
+    first = today - timedelta(days=RECENT_DAYS - 1)
+    return [c for c in history if first <= c["date"] <= today]
 
 
-# ============================================================
-# 最近代码修改 SVG 样式
-# ============================================================
-
-RECENT_STYLE = """
-.text {
-    font-family:
-        -apple-system,
-        BlinkMacSystemFont,
-        "Segoe UI",
-        Helvetica,
-        Arial,
-        sans-serif;
-}
-
-.card {
-    fill: #ffffff;
-    stroke: #d0d7de;
-    stroke-width: 1;
-}
-
-.title {
-    fill: #24292f;
-    font-size: 24px;
-    font-weight: 400;
-}
-
-.header {
-    fill: #57606a;
-    font-size: 15px;
-    font-weight: 600;
-}
-
-.normal {
-    fill: #24292f;
-    font-size: 16px;
-    font-weight: 400;
-}
-
-.secondary {
-    fill: #57606a;
-    font-size: 15px;
-    font-weight: 400;
-}
-
-.author {
-    fill: #24292f;
-    font-size: 16px;
-    font-weight: 600;
-}
-
-.commit-title {
-    fill: #0969da;
-    font-size: 16px;
-    font-weight: 600;
-}
-
-.commit-sha {
-    fill: #0969da;
-    font-size: 14px;
-    font-weight: 400;
-}
-
-.divider {
-    stroke: #d8dee4;
-    stroke-width: 1;
-}
-
-@media (prefers-color-scheme: dark) {
-
-    .card {
-        fill: #0d1117;
-        stroke: #30363d;
+def repository_statistics(full_history: list[dict]) -> dict:
+    contributors: Counter = Counter(canonical_author(c["author"]) for c in full_history)
+    today = datetime.now(TZ).date()
+    if full_history:
+        first_date = min(c["date"] for c in full_history)
+        last_date = max(c["date"] for c in full_history)
+    else:
+        first_date = today
+        last_date = today
+    return {
+        "total_commits": len(full_history),
+        "contributors": len(contributors),
+        "first_date": first_date,
+        "last_date": last_date,
+        "top": contributors.most_common(TOP_CONTRIBUTORS),
     }
 
-    .title,
-    .normal,
-    .author {
-        fill: #c9d1d9;
-    }
 
-    .header,
-    .secondary {
-        fill: #8b949e;
-    }
+def branch_role(branch: str) -> str:
+    if branch == BASE_BRANCH:
+        return "正式版"
+    if branch.endswith("-dev"):
+        return "开发版"
+    if branch.endswith("-original"):
+        return "原始基线"
+    if branch.endswith("-test") or "test" in branch.lower():
+        return "测试版"
+    return "分支"
 
-    .commit-title,
-    .commit-sha {
-        fill: #58a6ff;
-    }
 
-    .divider {
-        stroke: #21262d;
-    }
+def ahead_behind(base_branch: str, branch: str) -> tuple[int | None, int | None, bool]:
+    if branch == base_branch:
+        return 0, 0, True
+
+    base_ref = branch_ref(base_branch)
+    current_ref = branch_ref(branch)
+
+    # 没有共同祖先时，不把数千条独立历史伪装成 ahead / behind。
+    if not git_ok("merge-base", base_ref, current_ref):
+        return None, None, False
+
+    raw = git("rev-list", "--left-right", "--count", f"{base_ref}...{current_ref}")
+    parts = raw.strip().split()
+    if len(parts) != 2:
+        return None, None, False
+
+    behind = int(parts[0])
+    ahead = int(parts[1])
+    return ahead, behind, True
+
+
+def latest_commit(ref: str) -> dict | None:
+    history = load_log(ref)
+    return history[0] if history else None
+
+
+def safe_slug(branch: str) -> str:
+    slug = re.sub(r"[^A-Za-z0-9._-]+", "-", branch).strip("-")
+    return slug or "branch"
+
+
+def repository_name() -> str:
+    return os.getenv("GITHUB_REPOSITORY", "Leo-John233/OnStep")
+
+
+def repository_url() -> str:
+    return f"https://github.com/{repository_name()}"
+
+
+def branch_url(branch: str) -> str:
+    return f"{repository_url()}/tree/{branch}"
+
+
+def commit_url(sha: str) -> str:
+    return f"{repository_url()}/commit/{sha}"
+
+
+# ============================================================
+# SVG 公共辅助
+# ============================================================
+
+
+def svg_text(value: object) -> str:
+    return html.escape(str(value), quote=True)
+
+
+def truncate(text: str, length: int) -> str:
+    text = str(text)
+    if len(text) <= length:
+        return text
+    return text[: max(0, length - 1)] + "…"
+
+
+COMMON_STYLE = """
+.text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif}
+.card{fill:#fff;stroke:#d0d7de;stroke-width:1}
+.title{fill:#24292f;font-size:22px;font-weight:400}
+.header{fill:#57606a;font-size:14px;font-weight:600}
+.normal{fill:#24292f;font-size:15px;font-weight:400}
+.bold{fill:#24292f;font-size:15px;font-weight:600}
+.secondary{fill:#57606a;font-size:14px;font-weight:400}
+.link{fill:#0969da;font-size:15px;font-weight:600}
+.divider{stroke:#d8dee4;stroke-width:1}
+.badge{fill:#ddf4ff;stroke:#54aeff;stroke-width:1}
+.badge-text{fill:#0969da;font-size:12px;font-weight:600}
+.good{fill:#1a7f37;font-size:14px;font-weight:600}
+.warn{fill:#9a6700;font-size:14px;font-weight:600}
+@media(prefers-color-scheme:dark){
+.card{fill:#0d1117;stroke:#30363d}.title,.normal,.bold{fill:#c9d1d9}
+.header,.secondary{fill:#8b949e}.link{fill:#58a6ff}.divider{stroke:#21262d}
+.badge{fill:#122117;stroke:#238636}.badge-text,.good{fill:#3fb950}.warn{fill:#d29922}
 }
 """
+
+
+def write_svg(path: Path, lines: list[str]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(lines), encoding="utf-8")
 
 
 # ============================================================
 # 最近代码修改 SVG
 # ============================================================
 
-def generate_recent_svg(
-    history: list[dict],
-) -> None:
-    """
-    生成 GitHub 风格最近代码修改卡片。
-    """
 
-    commits = get_recent_commits(
-        history
-    )
-
-    visible = commits[
-        :MAX_RECENT_ROWS
-    ]
-
-    hidden_count = max(
-        0,
-        len(commits) - len(visible),
-    )
-
-    # --------------------------------------------------------
-    # 整体尺寸
-    # --------------------------------------------------------
+def generate_recent_svg(history: list[dict], output: Path, branch: str) -> None:
+    commits = recent_commits(history)
+    visible = commits[:MAX_RECENT_ROWS]
+    hidden_count = max(0, len(commits) - len(visible))
 
     width = 1120
-
     title_y = 29
     card_y = 50
+    header_h = 46
+    row_h = 46
+    footer_h = 46
+    rows = max(1, len(visible))
+    card_h = header_h + rows * row_h + footer_h
+    height = card_y + card_h + 1
 
-    header_height = 46
-    row_height = 46
-    footer_height = 46
+    date_x, author_x, subject_x, sha_x, scope_x = 30, 122, 300, 800, 900
 
-    rows = max(
-        1,
-        len(visible),
-    )
-
-    card_height = (
-        header_height
-        + rows * row_height
-        + footer_height
-    )
-
-    height = (
-        card_y
-        + card_height
-        + 1
-    )
-
-    # --------------------------------------------------------
-    # 四列位置
-    # --------------------------------------------------------
-
-    date_x = 30
-    author_x = 122
-    subject_x = 300
-    scope_x = 900
-
-    svg: list[str] = [
-        (
-            '<svg '
-            'xmlns="http://www.w3.org/2000/svg" '
-            f'width="{width}" '
-            f'height="{height}" '
-            f'viewBox="0 0 {width} {height}" '
-            'preserveAspectRatio="xMinYMin meet" '
-            'role="img">'
-        ),
-        "<style>",
-        RECENT_STYLE,
-        "</style>",
-        (
-            '<text '
-            'class="text title" '
-            'x="0" '
-            f'y="{title_y}">'
-            f"最近 {RECENT_DAYS} 天代码提交 "
-            f"{len(commits)} 次"
-            "</text>"
-        ),
-        (
-            '<rect '
-            'class="card" '
-            'x="0.5" '
-            f'y="{card_y + 0.5}" '
-            'width="1118" '
-            f'height="{card_height - 1}" '
-            'rx="6" '
-            'ry="6"/>'
-        ),
+    svg = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}" role="img">',
+        "<style>", COMMON_STYLE, "</style>",
+        f'<text class="text title" x="0" y="{title_y}">最近 {RECENT_DAYS} 天代码提交 {len(commits)} 次 · {svg_text(branch)}</text>',
+        f'<rect class="card" x="0.5" y="{card_y + 0.5}" width="1118" height="{card_h - 1}" rx="6" ry="6"/>',
+        f'<text class="text header" x="{date_x}" y="{card_y + 29}">日期</text>',
+        f'<text class="text header" x="{author_x}" y="{card_y + 29}">修改者</text>',
+        f'<text class="text header" x="{subject_x}" y="{card_y + 29}">修改内容</text>',
+        f'<text class="text header" x="{scope_x}" y="{card_y + 29}">范围</text>',
+        f'<line class="divider" x1="0" y1="{card_y + header_h}" x2="1119" y2="{card_y + header_h}"/>',
     ]
 
-    # --------------------------------------------------------
-    # 表头
-    # --------------------------------------------------------
-
-    header_y = (
-        card_y + 30
-    )
-
-    svg.extend(
-        [
-            (
-                '<text '
-                'class="text header" '
-                f'x="{date_x}" '
-                f'y="{header_y}">'
-                "日期"
-                "</text>"
-            ),
-            (
-                '<text '
-                'class="text header" '
-                f'x="{author_x}" '
-                f'y="{header_y}">'
-                "修改者"
-                "</text>"
-            ),
-            (
-                '<text '
-                'class="text header" '
-                f'x="{subject_x}" '
-                f'y="{header_y}">'
-                "修改内容"
-                "</text>"
-            ),
-            (
-                '<text '
-                'class="text header" '
-                f'x="{scope_x}" '
-                f'y="{header_y}">'
-                "范围"
-                "</text>"
-            ),
-            (
-                '<line '
-                'class="divider" '
-                'x1="0" '
-                f'y1="{card_y + header_height}" '
-                'x2="1119" '
-                f'y2="{card_y + header_height}"/>'
-            ),
-        ]
-    )
-
-    rows_top = (
-        card_y + header_height
-    )
-
-    # --------------------------------------------------------
-    # 提交数据
-    # --------------------------------------------------------
-
+    rows_top = card_y + header_h
     if visible:
-
-        for index, commit in enumerate(
-            visible
-        ):
-
-            row_top = (
-                rows_top
-                + index * row_height
-            )
-
-            baseline = (
-                row_top + 30
-            )
-
-            commit_date = commit[
-                "date"
-            ]
-
-            date_text = (
-                f"{commit_date.month}/"
-                f"{commit_date.day}"
-            )
-
-            author = truncate(
-                commit["author"],
-                19,
-            )
-
-            # 字号增大以后适当限制标题长度
-            subject = truncate(
-                commit["subject"],
-                48,
-            )
-
-            scope = truncate(
-                commit["scope"],
-                20,
-            )
-
-            if (
-                commit["file_count"]
-                > 1
-            ):
-                scope = (
-                    f"{scope} · "
-                    f"{commit['file_count']}"
-                )
-
+        for i, commit in enumerate(visible):
+            row_top = rows_top + i * row_h
+            baseline = row_top + 30
+            d = commit["date"]
+            date_text = f"{d.month}/{d.day}"
+            author = truncate(commit["author"], 19)
+            subject = truncate(commit["subject"], 47)
+            scope = truncate(commit["scope"], 20)
+            if commit["file_count"] > 1:
+                scope += f" · {commit['file_count']}"
+            url = commit_url(commit["sha"])
             svg.extend(
                 [
-                    # 日期
-                    (
-                        '<text '
-                        'class="text normal" '
-                        f'x="{date_x}" '
-                        f'y="{baseline}">'
-                        f"{svg_text(date_text)}"
-                        "</text>"
-                    ),
-
-                    # 修改者
-                    (
-                        '<text '
-                        'class="text author" '
-                        f'x="{author_x}" '
-                        f'y="{baseline}">'
-                        f"{svg_text(author)}"
-                        "</text>"
-                    ),
-
-                    # Commit 标题
-                    (
-                        '<text '
-                        'class="text commit-title" '
-                        f'x="{subject_x}" '
-                        f'y="{baseline}">'
-                        f"{svg_text(subject)}"
-                        "</text>"
-                    ),
-
-                    # Commit SHA
-                    (
-                        '<text '
-                        'class="text commit-sha" '
-                        f'x="{subject_x + 510}" '
-                        f'y="{baseline}">'
-                        f"{svg_text(commit['short_sha'])}"
-                        "</text>"
-                    ),
-
-                    # 修改范围
-                    (
-                        '<text '
-                        'class="text secondary" '
-                        f'x="{scope_x}" '
-                        f'y="{baseline}">'
-                        f"{svg_text(scope)}"
-                        "</text>"
-                    ),
+                    f'<text class="text normal" x="{date_x}" y="{baseline}">{svg_text(date_text)}</text>',
+                    f'<text class="text bold" x="{author_x}" y="{baseline}">{svg_text(author)}</text>',
+                    f'<a href="{svg_text(url)}"><text class="text link" x="{subject_x}" y="{baseline}">{svg_text(subject)}</text></a>',
+                    f'<text class="text link" x="{sha_x}" y="{baseline}">{svg_text(commit["short_sha"])}</text>',
+                    f'<text class="text secondary" x="{scope_x}" y="{baseline}">{svg_text(scope)}</text>',
                 ]
             )
-
-            # 每行分隔线
-            if index < len(visible) - 1:
-
-                line_y = (
-                    row_top
-                    + row_height
-                )
-
-                svg.append(
-                    (
-                        '<line '
-                        'class="divider" '
-                        'x1="30" '
-                        f'y1="{line_y}" '
-                        'x2="1090" '
-                        f'y2="{line_y}"/>'
-                    )
-                )
-
+            if i < len(visible) - 1:
+                y = row_top + row_h
+                svg.append(f'<line class="divider" x1="28" y1="{y}" x2="1090" y2="{y}"/>')
     else:
-
         svg.append(
-            (
-                '<text '
-                'class="text secondary" '
-                f'x="{date_x}" '
-                f'y="{rows_top + 30}">'
-                f"最近 {RECENT_DAYS} 天暂无代码提交"
-                "</text>"
-            )
+            f'<text class="text secondary" x="30" y="{rows_top + 30}">最近 {RECENT_DAYS} 天没有有效代码提交</text>'
         )
 
-    # --------------------------------------------------------
-    # Footer
-    # --------------------------------------------------------
-
-    footer_y = (
-        rows_top
-        + rows * row_height
-    )
-
-    svg.append(
-        (
-            '<line '
-            'class="divider" '
-            'x1="0" '
-            f'y1="{footer_y}" '
-            'x2="1119" '
-            f'y2="{footer_y}"/>'
-        )
-    )
-
+    footer_y = rows_top + rows * row_h
+    svg.append(f'<line class="divider" x1="0" y1="{footer_y}" x2="1119" y2="{footer_y}"/>')
+    footer_text = "仅统计实际代码或项目文件修改"
     if hidden_count:
-
-        footer_text = (
-            f"显示最新 {len(visible)} 条，"
-            f"另有 {hidden_count} 次提交"
-        )
-
-    else:
-
-        footer_text = (
-            "仅统计实际代码或项目文件修改"
-        )
-
+        footer_text += f" · 另有 {hidden_count} 条未显示"
     svg.append(
-        (
-            '<text '
-            'class="text secondary" '
-            'x="30" '
-            f'y="{footer_y + 30}">'
-            f"{svg_text(footer_text)}"
-            "</text>"
-        )
+        f'<text class="text secondary" x="30" y="{footer_y + 29}">{svg_text(footer_text)}</text>'
     )
-
-    svg.append(
-        "</svg>"
-    )
-
-    RECENT_SVG.write_text(
-        "\n".join(svg),
-        encoding="utf-8",
-    )
+    svg.append("</svg>")
+    write_svg(output, svg)
 
 
 # ============================================================
-# Contribution Graph 数据
+# Contribution Graph SVG
 # ============================================================
 
-def contribution_counts(
-    history: list[dict],
-) -> Counter:
-    """
-    统计最近一年每天有效代码提交数量。
-    """
 
-    today = datetime.now(
-        TZ
-    ).date()
+ACTIVITY_STYLE = COMMON_STYLE + """
+.month,.weekday{fill:#24292f;font-size:14px;font-weight:400}
+.footer{fill:#57606a;font-size:14px;font-weight:400}
+.level-0{fill:#ebedf0;stroke:rgba(27,31,35,.06);stroke-width:1}
+.level-1{fill:#9be9a8}.level-2{fill:#40c463}.level-3{fill:#30a14e}.level-4{fill:#216e39}
+@media(prefers-color-scheme:dark){
+.month,.weekday{fill:#c9d1d9}.footer{fill:#8b949e}.level-0{fill:#161b22;stroke:#1b1f23}
+.level-1{fill:#0e4429}.level-2{fill:#006d32}.level-3{fill:#26a641}.level-4{fill:#39d353}
+}
+"""
 
-    first_day = (
-        today
-        - timedelta(days=364)
-    )
 
+def contribution_counts(history: list[dict]) -> Counter:
+    today = datetime.now(TZ).date()
+    first = today - timedelta(days=364)
     counts: Counter = Counter()
-
     for commit in history:
-
-        if (
-            first_day
-            <= commit["date"]
-            <= today
-        ):
-            counts[
-                commit["date"].isoformat()
-            ] += 1
-
+        if first <= commit["date"] <= today:
+            counts[commit["date"].isoformat()] += 1
     return counts
 
 
-def contribution_level(
-    count: int,
-) -> int:
-    """
-    将 Commit 数量转换为 GitHub 风格绿色等级。
-    """
-
-    if count == 0:
+def contribution_level(count: int) -> int:
+    if count <= 0:
         return 0
-
     if count == 1:
         return 1
-
     if count <= 3:
         return 2
-
     if count <= 6:
         return 3
-
     return 4
 
 
-# ============================================================
-# GitHub Contribution Graph 样式
-# ============================================================
+def generate_activity_svg(history: list[dict], output: Path, branch: str) -> None:
+    counts = contribution_counts(history)
+    total = sum(counts.values())
+    today = datetime.now(TZ).date()
+    first_day = today - timedelta(days=364)
 
-ACTIVITY_STYLE = """
-.card {
-    fill: #ffffff;
-    stroke: #d0d7de;
-    stroke-width: 1;
-}
-
-.text {
-    font-family:
-        -apple-system,
-        BlinkMacSystemFont,
-        "Segoe UI",
-        Helvetica,
-        Arial,
-        sans-serif;
-}
-
-.title {
-    fill: #24292f;
-    font-size: 22px;
-    font-weight: 400;
-}
-
-.month,
-.weekday {
-    fill: #24292f;
-    font-size: 14px;
-    font-weight: 400;
-}
-
-.footer {
-    fill: #57606a;
-    font-size: 14px;
-    font-weight: 400;
-}
-
-.level-0 {
-    fill: #ebedf0;
-    stroke: rgba(27, 31, 35, 0.06);
-    stroke-width: 1;
-}
-
-.level-1 {
-    fill: #9be9a8;
-}
-
-.level-2 {
-    fill: #40c463;
-}
-
-.level-3 {
-    fill: #30a14e;
-}
-
-.level-4 {
-    fill: #216e39;
-}
-
-@media (prefers-color-scheme: dark) {
-
-    .card {
-        fill: #0d1117;
-        stroke: #30363d;
-    }
-
-    .title,
-    .month,
-    .weekday {
-        fill: #c9d1d9;
-    }
-
-    .footer {
-        fill: #8b949e;
-    }
-
-    .level-0 {
-        fill: #161b22;
-        stroke: #1b1f23;
-    }
-
-    .level-1 {
-        fill: #0e4429;
-    }
-
-    .level-2 {
-        fill: #006d32;
-    }
-
-    .level-3 {
-        fill: #26a641;
-    }
-
-    .level-4 {
-        fill: #39d353;
-    }
-}
-"""
-
-
-# ============================================================
-# GitHub Contribution Graph
-# ============================================================
-
-def generate_activity_svg(
-    history: list[dict],
-) -> None:
-    """
-    生成最近一年 GitHub 风格 Contribution Graph。
-    """
-
-    counts = contribution_counts(
-        history
-    )
-
-    total = sum(
-        counts.values()
-    )
-
-    today = datetime.now(
-        TZ
-    ).date()
-
-    first_day = (
-        today
-        - timedelta(days=364)
-    )
-
-    width = 1120
-    height = 278
-
-    card_y = 44
-    card_width = 1119
-    card_height = 233
-
-    cell = 14
-    gap = 5
+    width, height = 1120, 278
+    card_y, card_w, card_h = 44, 1119, 233
+    cell, gap = 14, 5
     step = cell + gap
+    grid_left, grid_top = 80, 94
+    month_y, footer_y, legend_x = 84, 253, 872
 
-    grid_left = 80
-    grid_top = 94
+    offset_to_sunday = (first_day.weekday() + 1) % 7
+    grid_start = first_day - timedelta(days=offset_to_sunday)
+    grid_days = (today - grid_start).days + 1
 
-    month_y = 84
-
-    footer_y = 253
-    legend_x = 872
-
-    # --------------------------------------------------------
-    # 找到年度网格最前面的星期日
-    # --------------------------------------------------------
-
-    offset_to_sunday = (
-        first_day.weekday() + 1
-    ) % 7
-
-    grid_start = (
-        first_day
-        - timedelta(
-            days=offset_to_sunday
-        )
-    )
-
-    grid_days = (
-        today - grid_start
-    ).days + 1
-
-    svg: list[str] = [
-        (
-            '<svg '
-            'xmlns="http://www.w3.org/2000/svg" '
-            f'width="{width}" '
-            f'height="{height}" '
-            f'viewBox="0 0 {width} {height}" '
-            'preserveAspectRatio="xMinYMin meet" '
-            'role="img">'
-        ),
-        "<style>",
-        ACTIVITY_STYLE,
-        "</style>",
-        (
-            '<text '
-            'class="text title" '
-            'x="0" '
-            'y="26">'
-            f"{total} contributions in the last year"
-            "</text>"
-        ),
-        (
-            '<rect '
-            'class="card" '
-            'x="0.5" '
-            f'y="{card_y + 0.5}" '
-            f'width="{card_width - 1}" '
-            f'height="{card_height - 1}" '
-            'rx="6" '
-            'ry="6"/>'
-        ),
+    svg = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}" role="img">',
+        "<style>", ACTIVITY_STYLE, "</style>",
+        f'<text class="text title" x="0" y="26">{total} contributions in the last year · {svg_text(branch)}</text>',
+        f'<rect class="card" x="0.5" y="{card_y + 0.5}" width="{card_w - 1}" height="{card_h - 1}" rx="6" ry="6"/>',
     ]
 
-    # --------------------------------------------------------
-    # 月份
-    # --------------------------------------------------------
-
-    previous_month = None
-    previous_x = -100
-
+    prev_month = None
+    prev_x = -100
     for week in range(53):
-
-        week_date = (
-            grid_start
-            + timedelta(
-                days=week * 7 + 3
-            )
-        )
-
-        if (
-            week_date.month
-            == previous_month
-        ):
+        week_date = grid_start + timedelta(days=week * 7 + 3)
+        if week_date.month == prev_month:
             continue
-
-        x = (
-            grid_left
-            + week * step
-        )
-
-        # 防止月份名称距离太近
-        if (
-            x - previous_x
-            < 45
-        ):
+        x = grid_left + week * step
+        if x - prev_x < 45:
             continue
-
-        previous_month = (
-            week_date.month
-        )
-
-        previous_x = x
-
+        prev_month = week_date.month
+        prev_x = x
         svg.append(
-            (
-                '<text '
-                'class="text month" '
-                f'x="{x}" '
-                f'y="{month_y}">'
-                f"{week_date.strftime('%b')}"
-                "</text>"
-            )
+            f'<text class="text month" x="{x}" y="{month_y}">{week_date.strftime("%b")}</text>'
         )
 
-    # --------------------------------------------------------
-    # 星期
-    # --------------------------------------------------------
+    for row, label in {1: "Mon", 3: "Wed", 5: "Fri"}.items():
+        y = grid_top + row * step + 12
+        svg.append(f'<text class="text weekday" x="35" y="{y}">{label}</text>')
 
-    weekday_labels = {
-        1: "Mon",
-        3: "Wed",
-        5: "Fri",
-    }
-
-    for row, label in (
-        weekday_labels.items()
-    ):
-
-        y = (
-            grid_top
-            + row * step
-            + 12
-        )
-
-        svg.append(
-            (
-                '<text '
-                'class="text weekday" '
-                'x="35" '
-                f'y="{y}">'
-                f"{label}"
-                "</text>"
-            )
-        )
-
-    # --------------------------------------------------------
-    # Contribution 方格
-    # --------------------------------------------------------
-
-    for offset in range(
-        grid_days
-    ):
-
-        current = (
-            grid_start
-            + timedelta(days=offset)
-        )
-
-        if (
-            current < first_day
-            or current > today
-        ):
+    for offset in range(grid_days):
+        current = grid_start + timedelta(days=offset)
+        if current < first_day or current > today:
             continue
-
-        week = (
-            offset // 7
-        )
-
+        week = offset // 7
         if week >= 53:
             continue
-
-        # Sunday = 0
-        row = (
-            current.weekday() + 1
-        ) % 7
-
-        x = (
-            grid_left
-            + week * step
-        )
-
-        y = (
-            grid_top
-            + row * step
-        )
-
-        count = counts.get(
-            current.isoformat(),
-            0,
-        )
-
-        level = contribution_level(
-            count
-        )
-
-        tooltip = (
-            f"{count} contribution"
-            f"{'s' if count != 1 else ''} "
-            f"on {current.isoformat()}"
-        )
-
+        row = (current.weekday() + 1) % 7
+        x = grid_left + week * step
+        y = grid_top + row * step
+        count = counts.get(current.isoformat(), 0)
+        level = contribution_level(count)
+        tooltip = f"{count} contribution{'s' if count != 1 else ''} on {current.isoformat()}"
         svg.append(
-            (
-                '<rect '
-                f'class="level-{level}" '
-                f'x="{x}" '
-                f'y="{y}" '
-                f'width="{cell}" '
-                f'height="{cell}" '
-                'rx="2" '
-                'ry="2">'
-                f"<title>{svg_text(tooltip)}</title>"
-                "</rect>"
-            )
+            f'<rect class="level-{level}" x="{x}" y="{y}" width="{cell}" height="{cell}" rx="2" ry="2"><title>{svg_text(tooltip)}</title></rect>'
         )
 
-    # --------------------------------------------------------
-    # Footer
-    # --------------------------------------------------------
-
-    svg.append(
-        (
-            '<text '
-            'class="text footer" '
-            'x="60" '
-            f'y="{footer_y}">'
-            "Learn how we count contributions"
-            "</text>"
-        )
-    )
-
-    svg.append(
-        (
-            '<text '
-            'class="text footer" '
-            f'x="{legend_x}" '
-            f'y="{footer_y}">'
-            "Less"
-            "</text>"
-        )
-    )
-
-    # --------------------------------------------------------
-    # Less -> More
-    # --------------------------------------------------------
-
+    svg.append(f'<text class="text footer" x="60" y="{footer_y}">Valid code changes only</text>')
+    svg.append(f'<text class="text footer" x="{legend_x}" y="{footer_y}">Less</text>')
     for index in range(5):
-
-        x = (
-            legend_x
-            + 40
-            + index * step
-        )
-
+        x = legend_x + 40 + index * step
         svg.append(
-            (
-                '<rect '
-                f'class="level-{index}" '
-                f'x="{x}" '
-                f'y="{footer_y - 13}" '
-                f'width="{cell}" '
-                f'height="{cell}" '
-                'rx="2" '
-                'ry="2"/>'
-            )
+            f'<rect class="level-{index}" x="{x}" y="{footer_y - 13}" width="{cell}" height="{cell}" rx="2" ry="2"/>'
         )
-
-    svg.append(
-        (
-            '<text '
-            'class="text footer" '
-            f'x="{legend_x + 140}" '
-            f'y="{footer_y}">'
-            "More"
-            "</text>"
-        )
-    )
-
-    svg.append(
-        "</svg>"
-    )
-
-    ACTIVITY_SVG.write_text(
-        "\n".join(svg),
-        encoding="utf-8",
-    )
-
-
-# ============================================================
-# Repository Statistics 样式
-# ============================================================
-
-STATISTICS_STYLE = """
-.card {
-    fill: #ffffff;
-    stroke: #d0d7de;
-    stroke-width: 1;
-}
-
-.text {
-    font-family:
-        -apple-system,
-        BlinkMacSystemFont,
-        "Segoe UI",
-        Helvetica,
-        Arial,
-        sans-serif;
-}
-
-.title {
-    fill: #24292f;
-    font-size: 22px;
-    font-weight: 400;
-}
-
-.metric-value {
-    fill: #24292f;
-    font-size: 22px;
-    font-weight: 600;
-}
-
-.metric-label {
-    fill: #57606a;
-    font-size: 14px;
-    font-weight: 400;
-}
-
-.section-title {
-    fill: #24292f;
-    font-size: 16px;
-    font-weight: 600;
-}
-
-.contributor-name {
-    fill: #0969da;
-    font-size: 15px;
-    font-weight: 600;
-}
-
-.contributor-count {
-    fill: #57606a;
-    font-size: 14px;
-    font-weight: 400;
-}
-
-.footer {
-    fill: #57606a;
-    font-size: 13px;
-    font-weight: 400;
-}
-
-.divider {
-    stroke: #d8dee4;
-    stroke-width: 1;
-}
-
-@media (prefers-color-scheme: dark) {
-
-    .card {
-        fill: #0d1117;
-        stroke: #30363d;
-    }
-
-    .title,
-    .metric-value,
-    .section-title {
-        fill: #c9d1d9;
-    }
-
-    .metric-label,
-    .contributor-count,
-    .footer {
-        fill: #8b949e;
-    }
-
-    .contributor-name {
-        fill: #58a6ff;
-    }
-
-    .divider {
-        stroke: #21262d;
-    }
-}
-"""
-
-
-# ============================================================
-# Repository Statistics 数据
-# ============================================================
-
-def repository_statistics(
-    full_history: list[dict],
-) -> dict:
-    """
-    基于完整当前分支 Git 历史统计仓库数据。
-    """
-
-    clean_history = [
-        commit
-        for commit in full_history
-        if not is_bot_commit(commit)
-    ]
-
-    contributors: Counter = Counter(
-        canonical_author(
-            commit["author"]
-        )
-        for commit in clean_history
-    )
-
-    if clean_history:
-
-        first_date = min(
-            commit["date"]
-            for commit in clean_history
-        )
-
-        last_date = max(
-            commit["date"]
-            for commit in clean_history
-        )
-
-    else:
-
-        today = datetime.now(
-            TZ
-        ).date()
-
-        first_date = today
-        last_date = today
-
-    return {
-        "total_commits": len(
-            clean_history
-        ),
-        "contributors": len(
-            contributors
-        ),
-        "first_date": first_date,
-        "last_date": last_date,
-        "top": contributors.most_common(
-            TOP_CONTRIBUTORS
-        ),
-    }
+    svg.append(f'<text class="text footer" x="{legend_x + 140}" y="{footer_y}">More</text>')
+    svg.append("</svg>")
+    write_svg(output, svg)
 
 
 # ============================================================
 # Repository Statistics SVG
 # ============================================================
 
-def generate_statistics_svg(
-    full_history: list[dict],
-) -> None:
-    """
-    生成完整仓库历史统计卡片。
-    """
 
-    stats = repository_statistics(
-        full_history
-    )
-
+def generate_statistics_svg(full_history: list[dict], output: Path, branch: str) -> None:
+    stats = repository_statistics(full_history)
     top = stats["top"]
 
     width = 1120
-
     card_y = 44
-
-    metric_height = 92
-    contributors_title_height = 48
-    row_height = 42
-    footer_height = 42
-
-    row_count = max(
-        1,
-        len(top),
-    )
-
-    card_height = (
-        metric_height
-        + contributors_title_height
-        + row_count * row_height
-        + footer_height
-    )
-
-    height = (
-        card_y
-        + card_height
-        + 1
-    )
-
-    divider_y = (
-        card_y
-        + metric_height
-    )
-
-    contributors_title_y = (
-        divider_y
-        + 30
-    )
-
-    rows_top = (
-        divider_y
-        + contributors_title_height
-    )
-
-    footer_y = (
-        rows_top
-        + row_count * row_height
-    )
+    metric_h = 92
+    contributors_title_h = 48
+    row_h = 42
+    footer_h = 42
+    row_count = max(1, len(top))
+    card_h = metric_h + contributors_title_h + row_count * row_h + footer_h
+    height = card_y + card_h + 1
+    divider_y = card_y + metric_h
+    contributors_title_y = divider_y + 30
+    rows_top = divider_y + contributors_title_h
+    footer_y = rows_top + row_count * row_h
 
     metrics = [
-        (
-            f"{stats['total_commits']:,}",
-            "Commits",
-        ),
-        (
-            f"{stats['contributors']:,}",
-            "Contributors",
-        ),
-        (
-            f"Since {stats['first_date'].year}",
-            "Repository history",
-        ),
+        (f"{stats['total_commits']:,}", "Commits"),
+        (f"{stats['contributors']:,}", "Contributors"),
+        (f"Since {stats['first_date'].year}", "Repository history"),
     ]
 
-    svg: list[str] = [
-        (
-            '<svg '
-            'xmlns="http://www.w3.org/2000/svg" '
-            f'width="{width}" '
-            f'height="{height}" '
-            f'viewBox="0 0 {width} {height}" '
-            'preserveAspectRatio="xMinYMin meet" '
-            'role="img">'
-        ),
-        "<style>",
-        STATISTICS_STYLE,
-        "</style>",
-        (
-            '<text '
-            'class="text title" '
-            'x="0" '
-            'y="26">'
-            "Repository statistics"
-            "</text>"
-        ),
-        (
-            '<rect '
-            'class="card" '
-            'x="0.5" '
-            f'y="{card_y + 0.5}" '
-            'width="1118" '
-            f'height="{card_height - 1}" '
-            'rx="6" '
-            'ry="6"/>'
-        ),
+    svg = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}" role="img">',
+        "<style>", COMMON_STYLE, "</style>",
+        f'<text class="text title" x="0" y="26">Repository statistics · {svg_text(branch)}</text>',
+        f'<rect class="card" x="0.5" y="{card_y + 0.5}" width="1118" height="{card_h - 1}" rx="6" ry="6"/>',
     ]
 
-    # --------------------------------------------------------
-    # 顶部三个统计指标
-    # --------------------------------------------------------
-
-    metric_centers = [
-        186,
-        560,
-        934,
-    ]
-
-    for (
-        x,
-        (
-            value,
-            label,
-        ),
-    ) in zip(
-        metric_centers,
-        metrics,
-    ):
-
+    for x, (value, label) in zip([186, 560, 934], metrics):
         svg.extend(
             [
-                (
-                    '<text '
-                    'class="text metric-value" '
-                    f'x="{x}" '
-                    f'y="{card_y + 38}" '
-                    'text-anchor="middle">'
-                    f"{svg_text(value)}"
-                    "</text>"
-                ),
-                (
-                    '<text '
-                    'class="text metric-label" '
-                    f'x="{x}" '
-                    f'y="{card_y + 64}" '
-                    'text-anchor="middle">'
-                    f"{svg_text(label)}"
-                    "</text>"
-                ),
+                f'<text class="text bold" x="{x}" y="{card_y + 38}" text-anchor="middle" style="font-size:22px">{svg_text(value)}</text>',
+                f'<text class="text secondary" x="{x}" y="{card_y + 64}" text-anchor="middle">{svg_text(label)}</text>',
             ]
         )
-
-    # 顶部指标分隔线
-    for x in (
-        373,
-        747,
-    ):
-
+    for x in (373, 747):
         svg.append(
-            (
-                '<line '
-                'class="divider" '
-                f'x1="{x}" '
-                f'y1="{card_y + 18}" '
-                f'x2="{x}" '
-                f'y2="{card_y + 74}"/>'
-            )
+            f'<line class="divider" x1="{x}" y1="{card_y + 18}" x2="{x}" y2="{card_y + 74}"/>'
         )
 
-    # --------------------------------------------------------
-    # Contributors
-    # --------------------------------------------------------
-
+    svg.append(f'<line class="divider" x1="0" y1="{divider_y}" x2="1119" y2="{divider_y}"/>')
     svg.append(
-        (
-            '<line '
-            'class="divider" '
-            'x1="0" '
-            f'y1="{divider_y}" '
-            'x2="1119" '
-            f'y2="{divider_y}"/>'
-        )
-    )
-
-    svg.append(
-        (
-            '<text '
-            'class="text section-title" '
-            'x="28" '
-            f'y="{contributors_title_y}">'
-            "Top contributors"
-            "</text>"
-        )
+        f'<text class="text bold" x="28" y="{contributors_title_y}">Top contributors</text>'
     )
 
     if top:
-
-        for (
-            index,
-            (
-                author,
-                count,
-            ),
-        ) in enumerate(top):
-
-            row_top = (
-                rows_top
-                + index * row_height
+        for i, (author, count) in enumerate(top):
+            row_top = rows_top + i * row_h
+            baseline = row_top + 27
+            commit_text = "1 commit" if count == 1 else f"{count:,} commits"
+            svg.append(
+                f'<text class="text link" x="28" y="{baseline}">{svg_text(author)}</text>'
             )
-
-            baseline = (
-                row_top + 27
+            svg.append(
+                f'<text class="text secondary" x="1090" y="{baseline}" text-anchor="end">{svg_text(commit_text)}</text>'
             )
+            if i < len(top) - 1:
+                y = row_top + row_h
+                svg.append(f'<line class="divider" x1="28" y1="{y}" x2="1090" y2="{y}"/>')
+    else:
+        svg.append(
+            f'<text class="text secondary" x="28" y="{rows_top + 27}">No contributor data</text>'
+        )
 
-            if count == 1:
-                commit_text = "1 commit"
+    svg.append(f'<line class="divider" x1="0" y1="{footer_y}" x2="1119" y2="{footer_y}"/>')
+    date_range = f"{stats['first_date'].isoformat()} – {stats['last_date'].isoformat()}"
+    svg.append(
+        f'<text class="text secondary" x="28" y="{footer_y + 27}">Based on the complete Git history of this branch</text>'
+    )
+    svg.append(
+        f'<text class="text secondary" x="1090" y="{footer_y + 27}" text-anchor="end">{svg_text(date_range)}</text>'
+    )
+    svg.append("</svg>")
+    write_svg(output, svg)
 
-            else:
-                commit_text = (
-                    f"{count:,} commits"
-                )
 
+# ============================================================
+# 分支统计
+# ============================================================
+
+
+def collect_branch_info(
+    branches: list[str],
+    recent_histories: dict[str, list[dict]],
+    full_histories: dict[str, list[dict]],
+) -> list[dict]:
+    result: list[dict] = []
+    for branch in branches:
+        ref = branch_ref(branch)
+        latest = full_histories[branch][0] if full_histories[branch] else None
+        ahead, behind, comparable = ahead_behind(BASE_BRANCH, branch)
+        recent7 = recent_commits(recent_histories[branch])
+        full_stats = repository_statistics(full_histories[branch])
+
+        result.append(
+            {
+                "branch": branch,
+                "slug": safe_slug(branch),
+                "role": branch_role(branch),
+                "ahead": ahead,
+                "behind": behind,
+                "comparable": comparable,
+                "recent7": len(recent7),
+                "total_commits": full_stats["total_commits"],
+                "latest_date": latest["date"].isoformat() if latest else "-",
+                "latest_subject": latest["subject"] if latest else "-",
+                "latest_sha": latest["short_sha"] if latest else "-",
+                "url": branch_url(branch),
+            }
+        )
+    return result
+
+
+def generate_branch_statistics_svg(branches: list[dict], output: Path) -> None:
+    width = 1120
+    title_y = 29
+    card_y = 50
+    header_h = 46
+    row_h = 48
+    footer_h = 44
+    rows = max(1, len(branches))
+    card_h = header_h + rows * row_h + footer_h
+    height = card_y + card_h + 1
+
+    x_branch = 28
+    x_role = 260
+    x_ahead = 380
+    x_behind = 470
+    x_recent = 570
+    x_date = 690
+    x_subject = 810
+
+    svg = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}" role="img">',
+        "<style>", COMMON_STYLE, "</style>",
+        f'<text class="text title" x="0" y="{title_y}">Branches · 自动统计 {len(branches)} 个 {svg_text(BRANCH_PATTERN)} 分支</text>',
+        f'<rect class="card" x="0.5" y="{card_y + 0.5}" width="1118" height="{card_h - 1}" rx="6" ry="6"/>',
+        f'<text class="text header" x="{x_branch}" y="{card_y + 29}">分支</text>',
+        f'<text class="text header" x="{x_role}" y="{card_y + 29}">类型</text>',
+        f'<text class="text header" x="{x_ahead}" y="{card_y + 29}">Ahead</text>',
+        f'<text class="text header" x="{x_behind}" y="{card_y + 29}">Behind</text>',
+        f'<text class="text header" x="{x_recent}" y="{card_y + 29}">近7天</text>',
+        f'<text class="text header" x="{x_date}" y="{card_y + 29}">最近更新</text>',
+        f'<text class="text header" x="{x_subject}" y="{card_y + 29}">最近提交</text>',
+        f'<line class="divider" x1="0" y1="{card_y + header_h}" x2="1119" y2="{card_y + header_h}"/>',
+    ]
+
+    rows_top = card_y + header_h
+    if branches:
+        for i, info in enumerate(branches):
+            row_top = rows_top + i * row_h
+            baseline = row_top + 31
+            ahead_text = str(info["ahead"]) if info["comparable"] else "—"
+            behind_text = str(info["behind"]) if info["comparable"] else "—"
+            subject = truncate(info["latest_subject"], 30)
             svg.extend(
                 [
-                    (
-                        '<text '
-                        'class="text contributor-name" '
-                        'x="28" '
-                        f'y="{baseline}">'
-                        f"{svg_text(author)}"
-                        "</text>"
-                    ),
-                    (
-                        '<text '
-                        'class="text contributor-count" '
-                        'x="1090" '
-                        f'y="{baseline}" '
-                        'text-anchor="end">'
-                        f"{svg_text(commit_text)}"
-                        "</text>"
-                    ),
+                    f'<a href="{svg_text(info["url"])}"><text class="text link" x="{x_branch}" y="{baseline}">{svg_text(truncate(info["branch"], 28))}</text></a>',
+                    f'<text class="text normal" x="{x_role}" y="{baseline}">{svg_text(info["role"])}</text>',
+                    f'<text class="text good" x="{x_ahead}" y="{baseline}">↑ {svg_text(ahead_text)}</text>',
+                    f'<text class="text warn" x="{x_behind}" y="{baseline}">↓ {svg_text(behind_text)}</text>',
+                    f'<text class="text normal" x="{x_recent}" y="{baseline}">{svg_text(info["recent7"])}</text>',
+                    f'<text class="text secondary" x="{x_date}" y="{baseline}">{svg_text(info["latest_date"])}</text>',
+                    f'<text class="text normal" x="{x_subject}" y="{baseline}">{svg_text(subject)}</text>',
                 ]
             )
+            if i < len(branches) - 1:
+                y = row_top + row_h
+                svg.append(f'<line class="divider" x1="28" y1="{y}" x2="1090" y2="{y}"/>')
 
-            if index < len(top) - 1:
-
-                line_y = (
-                    row_top
-                    + row_height
-                )
-
-                svg.append(
-                    (
-                        '<line '
-                        'class="divider" '
-                        'x1="28" '
-                        f'y1="{line_y}" '
-                        'x2="1090" '
-                        f'y2="{line_y}"/>'
-                    )
-                )
-
-    else:
-
-        svg.append(
-            (
-                '<text '
-                'class="text contributor-count" '
-                'x="28" '
-                f'y="{rows_top + 27}">'
-                "No contributor data"
-                "</text>"
-            )
-        )
-
-    # --------------------------------------------------------
-    # Footer
-    # --------------------------------------------------------
-
+    footer_y = rows_top + rows * row_h
+    svg.append(f'<line class="divider" x1="0" y1="{footer_y}" x2="1119" y2="{footer_y}"/>')
     svg.append(
-        (
-            '<line '
-            'class="divider" '
-            'x1="0" '
-            f'y1="{footer_y}" '
-            'x2="1119" '
-            f'y2="{footer_y}"/>'
-        )
+        f'<text class="text secondary" x="28" y="{footer_y + 28}">Ahead / Behind 均相对于 {svg_text(BASE_BRANCH)}；无共同祖先时显示 —</text>'
     )
-
-    date_range = (
-        f"{stats['first_date'].isoformat()} "
-        "– "
-        f"{stats['last_date'].isoformat()}"
-    )
-
-    svg.extend(
-        [
-            (
-                '<text '
-                'class="text footer" '
-                'x="28" '
-                f'y="{footer_y + 27}">'
-                "Based on the complete Git history of this branch"
-                "</text>"
-            ),
-            (
-                '<text '
-                'class="text footer" '
-                'x="1090" '
-                f'y="{footer_y + 27}" '
-                'text-anchor="end">'
-                f"{svg_text(date_range)}"
-                "</text>"
-            ),
-        ]
-    )
-
-    svg.append(
-        "</svg>"
-    )
-
-    STATISTICS_SVG.write_text(
-        "\n".join(svg),
-        encoding="utf-8",
-    )
+    svg.append("</svg>")
+    write_svg(output, svg)
 
 
 # ============================================================
-# GitHub Pages 首页
+# GitHub Pages
 # ============================================================
 
-def generate_index_html() -> None:
-    """
-    生成 Pages 首页。
 
-    README 实际直接引用三个 SVG，
-    此页面主要用于直接访问 GitHub Pages 时展示完整统计。
-    """
+def generate_index_html(branches: list[dict]) -> None:
+    page_data = [
+        {
+            "branch": item["branch"],
+            "slug": item["slug"],
+            "role": item["role"],
+            "ahead": item["ahead"],
+            "behind": item["behind"],
+            "comparable": item["comparable"],
+        }
+        for item in branches
+    ]
 
-    repository = os.getenv(
-        "GITHUB_REPOSITORY",
-        "Leo-John233/OnStep",
+    options = "\n".join(
+        f'<option value="{html.escape(item["branch"], quote=True)}">'
+        f'{html.escape(item["branch"])} · {html.escape(item["role"])}</option>'
+        for item in branches
     )
 
-    repository_url = (
-        "https://github.com/"
-        + repository
-    )
-
-    page = """<!DOCTYPE html>
+    page = f"""<!doctype html>
 <html lang="zh-CN">
-
 <head>
-
 <meta charset="utf-8">
-
-<meta
-    name="viewport"
-    content="width=device-width, initial-scale=1">
-
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>OnStep Repository Activity</title>
-
 <style>
-
-body {
-    margin: 0;
-    padding: 32px;
-    background: #ffffff;
-    color: #24292f;
-
-    font-family:
-        -apple-system,
-        BlinkMacSystemFont,
-        "Segoe UI",
-        Helvetica,
-        Arial,
-        sans-serif;
-}
-
-main {
-    width: min(1120px, 100%);
-    margin: 0 auto;
-}
-
-img {
-    display: block;
-    width: 100%;
-    height: auto;
-    margin-bottom: 30px;
-}
-
-a {
-    color: #0969da;
-    text-decoration: none;
-}
-
-a:hover {
-    text-decoration: underline;
-}
-
-.footer {
-    margin-top: 24px;
-    margin-bottom: 32px;
-
-    color: #57606a;
-    font-size: 15px;
-}
-
-@media (prefers-color-scheme: dark) {
-
-    body {
-        background: #0d1117;
-        color: #c9d1d9;
-    }
-
-    a {
-        color: #58a6ff;
-    }
-
-    .footer {
-        color: #8b949e;
-    }
-}
-
+:root{{color-scheme:light dark}}
+body{{margin:0;padding:32px;background:#fff;color:#24292f;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif}}
+main{{width:min(1120px,100%);margin:0 auto}}
+h1{{font-size:28px;margin:0 0 18px}}
+.toolbar{{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:0 0 26px}}
+.toolbar label{{font-weight:600}}
+select{{font:inherit;padding:8px 34px 8px 10px;border:1px solid #d0d7de;border-radius:6px;background:#fff;color:#24292f}}
+.meta{{color:#57606a;font-size:14px}}
+img{{display:block;width:100%;height:auto;margin:0 0 30px}}
+a{{color:#0969da;text-decoration:none}}a:hover{{text-decoration:underline}}
+.footer{{margin:24px 0 32px;color:#57606a;font-size:15px}}
+@media(prefers-color-scheme:dark){{body{{background:#0d1117;color:#c9d1d9}}select{{background:#161b22;color:#c9d1d9;border-color:#30363d}}.meta,.footer{{color:#8b949e}}a{{color:#58a6ff}}}}
 </style>
-
 </head>
-
 <body>
-
 <main>
-
-<img
-    src="recent-changes.svg"
-    alt="Recent Changes">
-
-<img
-    src="repository-activity.svg"
-    alt="Repository Activity">
-
-<img
-    src="repository-statistics.svg"
-    alt="Repository Statistics">
-
-<div class="footer">
-
-<a href="__REPOSITORY_URL__">
-返回 GitHub Repository
-</a>
-
+<h1>OnStep Repository Activity</h1>
+<div class="toolbar">
+<label for="branch">分支</label>
+<select id="branch">{options}</select>
+<span id="meta" class="meta"></span>
 </div>
 
+<img id="recent" src="recent-changes.svg" alt="Recent Changes">
+<img id="activity" src="repository-activity.svg" alt="Repository Activity">
+<img id="statistics" src="repository-statistics.svg" alt="Repository Statistics">
+<img src="branch-statistics.svg" alt="Branch Statistics">
+
+<div class="footer">
+<a href="{html.escape(repository_url(), quote=True)}">返回 GitHub Repository</a>
+</div>
 </main>
+<script>
+const branches = {json.dumps(page_data, ensure_ascii=False)};
+const select = document.getElementById('branch');
+const meta = document.getElementById('meta');
+const recent = document.getElementById('recent');
+const activity = document.getElementById('activity');
+const statistics = document.getElementById('statistics');
 
+function applyBranch(name) {{
+  const item = branches.find(x => x.branch === name) || branches[0];
+  if (!item) return;
+  const prefix = item.branch === {json.dumps(BASE_BRANCH)} ? '' : `branches/${{item.slug}}/`;
+  recent.src = prefix + 'recent-changes.svg';
+  activity.src = prefix + 'repository-activity.svg';
+  statistics.src = prefix + 'repository-statistics.svg';
+  if (item.comparable) {{
+    meta.textContent = `相对 {BASE_BRANCH}：↑ ${{item.ahead}} ahead · ↓ ${{item.behind}} behind`;
+  }} else {{
+    meta.textContent = '与基准分支无共同祖先';
+  }}
+  history.replaceState(null, '', '#branch=' + encodeURIComponent(item.branch));
+}}
+
+const fromHash = decodeURIComponent((location.hash.match(/branch=([^&]+)/) || [])[1] || '');
+if (branches.some(x => x.branch === fromHash)) select.value = fromHash;
+select.addEventListener('change', () => applyBranch(select.value));
+applyBranch(select.value);
+</script>
 </body>
-
 </html>
 """
 
-    page = page.replace(
-        "__REPOSITORY_URL__",
-        repository_url,
-    )
-
-    INDEX_HTML.write_text(
-        page,
-        encoding="utf-8",
-    )
-
-    # 禁用 Jekyll
-    (
-        OUTPUT_DIR / ".nojekyll"
-    ).write_text(
-        "",
+    (OUTPUT_DIR / "index.html").write_text(page, encoding="utf-8")
+    (OUTPUT_DIR / ".nojekyll").write_text("", encoding="utf-8")
+    (OUTPUT_DIR / "branches.json").write_text(
+        json.dumps(branches, ensure_ascii=False, indent=2, default=str),
         encoding="utf-8",
     )
 
 
 # ============================================================
-# Main
+# 主流程
 # ============================================================
+
 
 def main() -> None:
-    """
-    主流程。
-    """
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    OUTPUT_DIR.mkdir(
-        parents=True,
-        exist_ok=True,
+    branches = discover_branches()
+    print("自动发现分支：", ", ".join(branches))
+
+    if BASE_BRANCH not in branches:
+        raise RuntimeError(
+            f"基准分支 {BASE_BRANCH!r} 不在自动发现结果中。"
+            f"当前匹配规则为 {BRANCH_PATTERN!r}。"
+        )
+
+    recent_histories: dict[str, list[dict]] = {}
+    full_histories: dict[str, list[dict]] = {}
+
+    for branch in branches:
+        ref = branch_ref(branch)
+        print(f"读取 {branch} 最近一年有效代码历史")
+        recent_history = load_recent_history(ref)
+        print(f"  有效提交：{len(recent_history)}")
+
+        print(f"读取 {branch} 完整历史")
+        full_history = load_full_history(ref)
+        print(f"  完整提交：{len(full_history)}")
+
+        recent_histories[branch] = recent_history
+        full_histories[branch] = full_history
+
+        if branch == BASE_BRANCH:
+            target_dir = OUTPUT_DIR
+        else:
+            target_dir = OUTPUT_DIR / "branches" / safe_slug(branch)
+
+        generate_recent_svg(
+            recent_history,
+            target_dir / "recent-changes.svg",
+            branch,
+        )
+        generate_activity_svg(
+            recent_history,
+            target_dir / "repository-activity.svg",
+            branch,
+        )
+        generate_statistics_svg(
+            full_history,
+            target_dir / "repository-statistics.svg",
+            branch,
+        )
+
+    branch_info = collect_branch_info(
+        branches,
+        recent_histories,
+        full_histories,
     )
 
-    print(
-        "读取最近一年有效代码历史"
+    generate_branch_statistics_svg(
+        branch_info,
+        OUTPUT_DIR / "branch-statistics.svg",
     )
+    generate_index_html(branch_info)
 
-    recent_history = (
-        load_recent_history()
-    )
-
-    print(
-        "最近一年有效代码提交："
-        f"{len(recent_history)}"
-    )
-
-    print(
-        "读取完整 Git 历史"
-    )
-
-    full_history = (
-        load_full_history()
-    )
-
-    print(
-        "完整 Git 历史："
-        f"{len(full_history)}"
-    )
-
-    print(
-        "生成最近代码修改"
-    )
-
-    generate_recent_svg(
-        recent_history
-    )
-
-    print(
-        "生成 Repository Activity"
-    )
-
-    generate_activity_svg(
-        recent_history
-    )
-
-    print(
-        "生成 Repository Statistics"
-    )
-
-    generate_statistics_svg(
-        full_history
-    )
-
-    print(
-        "生成 GitHub Pages 首页"
-    )
-
-    generate_index_html()
-
-    print(
-        "完成"
-    )
+    print("生成完成：")
+    print(f"  {OUTPUT_DIR / 'recent-changes.svg'}")
+    print(f"  {OUTPUT_DIR / 'repository-activity.svg'}")
+    print(f"  {OUTPUT_DIR / 'repository-statistics.svg'}")
+    print(f"  {OUTPUT_DIR / 'branch-statistics.svg'}")
+    print(f"  {OUTPUT_DIR / 'index.html'}")
 
 
 if __name__ == "__main__":
