@@ -3,12 +3,12 @@ name: Update Repository Activity
 on:
   push:
     branches:
-      - release-4.24
+      - "release-*"
 
   workflow_dispatch:
 
-  # 即使近期没有新的 Commit，也每天刷新一次“最近 7 天”和年度贡献图
-  # GitHub Actions 的 cron 使用 UTC
+  # 每天刷新一次最近 7 天、年度贡献图和全部分支统计
+  # GitHub Actions cron 使用 UTC
   # 00:15 UTC = Asia/Shanghai 08:15
   schedule:
     - cron: "15 0 * * *"
@@ -24,22 +24,30 @@ permissions:
   id-token: write
 
 jobs:
-
   build:
     name: Generate activity
     runs-on: ubuntu-latest
 
     steps:
-
-      - name: Checkout release-4.24
+      - name: Checkout statistics generator
         uses: actions/checkout@v6
         with:
           ref: release-4.24
           fetch-depth: 0
 
+      - name: Fetch all repository branches
+        run: |
+          git fetch origin "+refs/heads/*:refs/remotes/origin/*" --prune
+          echo "Available release branches:"
+          git for-each-ref \
+            --format='%(refname:short)' \
+            'refs/remotes/origin/release-*'
+
       - name: Generate repository activity
         env:
           ACTIVITY_TIMEZONE: Asia/Shanghai
+          ACTIVITY_BASE_BRANCH: release-4.24
+          ACTIVITY_BRANCH_PATTERN: "release-*"
         run: |
           python3 .github/scripts/update_activity.py
 
@@ -51,11 +59,9 @@ jobs:
         with:
           path: site
 
-
   deploy:
     name: Deploy activity
     runs-on: ubuntu-latest
-
     needs:
       - build
 
@@ -64,7 +70,6 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
 
     steps:
-
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
