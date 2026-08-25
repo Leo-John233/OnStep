@@ -171,4 +171,10 @@ Custom modifications and maintenance:
 
 ![Repository Statistics](https://leo-john233.github.io/OnStep/repository-statistics.svg)
 
+## 🌿 Branches
+
+![Branch Statistics](https://leo-john233.github.io/OnStep/branch-statistics.svg)
+
+[打开完整分支统计与切换页面](https://leo-john233.github.io/OnStep/)
+
 [View all contributors](https://github.com/Leo-John233/OnStep/graphs/contributors)
