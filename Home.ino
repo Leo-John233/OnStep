@@ -212,6 +212,15 @@ void requestHomeAbort(bool restoreSafetyLimits) {
 // moves telescope to the home position, then stops tracking
 // 将望远镜移回初始位置，然后停止跟踪
 CommandErrors goHome(bool fast) {
+#if LIMIT_SENSE != OFF
+  // 物理限位恢复必须先由用户手动移出限位区域
+  // 限位输入释放并稳定 500 ms 后才允许 Home，ERR_LIMIT_SENSE 保留到 Home/Set Home 成功
+  const bool physicalLimitActive = digitalRead(LimitPin) == LIMIT_SENSE_STATE;
+  const bool physicalLimitReleaseSettling =
+    generalError == ERR_LIMIT_SENSE && (unsigned long)(millis() - lastLimitTriggerTime) <= 500UL;
+  if (physicalLimitActive || physicalLimitReleaseSettling) return CE_SLEW_ERR_OUTSIDE_LIMITS;
+#endif
+
   // 恢复性 Home 可覆盖残留的 Parked 标记
 #if HOME_SENSE == OFF
   const bool homeMayOverridePark = positionHomeReturnOnly();
