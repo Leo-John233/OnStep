@@ -412,7 +412,7 @@ void setup() {
     // 电机使能，但不发跟踪脉冲
     enableStepperDrivers();
 
-    // 使用 tracking 微步/电流保持，不切 GOTO 模式
+    // 使用 tracking 微步/电流保持
     axis1DriverTrackingMode(false);
     axis2DriverTrackingMode(false);
 
