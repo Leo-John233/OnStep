@@ -504,9 +504,7 @@ void loop() {
 
 void loop2() {
 #if HOME_SENSE != OFF
-  // =========================================================
   // 监听自动回原点 (Homing) 状态
-  // =========================================================
   static bool wasHoming = false;
   if (isHoming()) {
       wasHoming = true; // 系统正在回原点
@@ -515,7 +513,6 @@ void loop2() {
       // 真实自动回零成功只由 Home.ino 的 FH_DONE 阶段确认，避免回零失败也误解锁
       wasHoming = false;
   }
-  // =========================================================
 #endif
 
   // 导星 (GUIDING) 
@@ -553,9 +550,9 @@ void loop2() {
     // 确保 GOTO 过程中目标位置依然随时间更新
     if (trackingState == TrackingMoveTo) {
       moveTo();
-      // A normal sky Goto started from Motor Hold still has to follow the
-      // sidereal target while it is moving.  Keep lastTrackingState unchanged
-      // so an aborted Goto restores the real pre-Goto state (TrackingNone).
+      //一个正常的天空Goto从发动机保持仍然必须遵循
+      //恒星目标在移动时保持上次跟踪状态不变
+      //因此，中止的Goto会恢复到Goto之前的真实状态（TrackingNone）
       if (lastTrackingState == TrackingSidereal || gotoStartTrackingOnSuccess) {
         origTargetAxis1.fixed+=fstepAxis1.fixed;
         origTargetAxis2.fixed+=fstepAxis2.fixed;
@@ -598,20 +595,19 @@ void loop2() {
     if (limit_reading == LIMIT_SENSE_STATE) {
       
       lastLimitTriggerTime = currentTime;
-
+      // 回零模式直接放行（最高权限）
       if (isHoming()) {
         Axis1_LimitLock=0;
         Axis2_LimitLock=0;
         return;
       }
-
-      // 1. 回零模式直接放行（最高权限）
-      // 2. 简单的触发滤波
+        // =========================================================
+        // 1. 物理限位触发，立即停止所有运动
+        // =========================================================
       delay(2);
       if (digitalRead(LimitPin) == LIMIT_SENSE_STATE) {
-
         // =========================================================
-        // 3. 统一方向定义
+        // 2. 统一方向定义
         // =========================================================
         int currentMotionDir1 = 0;
         int currentMotionDir2 = 0;
@@ -624,7 +620,7 @@ void loop2() {
              else if (targetAxis1.part.m > posAxis1) currentMotionDir1 = -1; 
         }
 
-        // --- Axis 2 (DEC) 恢复标准逻辑 ---
+        // --- Axis 2 (DEC) ---
         if (guideDirAxis2 == 'n') currentMotionDir2 = 1;       
         else if (guideDirAxis2 == 's') currentMotionDir2 = -1; 
         else if (trackingState == TrackingMoveTo) {            
@@ -633,7 +629,7 @@ void loop2() {
         }
 
         // =========================================================
-        // 4. 智能记录锁死方向 (解决静止打断死锁)
+        // 3. 智能记录锁死方向 (解决静止打断死锁)
         // =========================================================
         
         // --- Axis 1 智能判断 ---
@@ -663,7 +659,7 @@ void loop2() {
         }
 
         // =========================================================
-        // 5. 逃离判断 (Escape Logic)
+        // 4. 逃离判断 (Escape Logic)
         // =========================================================
         // 只有所有正在移动且已锁定的轴都朝脱离限位方向运动时，
         // 才允许继续旧逻辑使用 OR，可能出现一个轴在逃离、另一个轴仍
@@ -676,7 +672,7 @@ void loop2() {
         const bool isEscaping = hasEscapeMotion && !axis1MovingIntoLimit && !axis2MovingIntoLimit;
 
         // =========================================================
-        // 6. 执行急停
+        // 5. 执行急停
         // =========================================================
         if (!isEscaping) {
             generalError = ERR_LIMIT_SENSE;
