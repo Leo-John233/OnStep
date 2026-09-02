@@ -161,8 +161,9 @@ CommandErrors startGuideAxis1(char direction, int guideRate, long guideDuration,
                                 (direction == 'w' && Axis1_LimitLock == 1));
 #endif
 
-  if (direction == 'e' && !guideEastOk()) return CE_SLEW_ERR_OUTSIDE_LIMITS;
-  if (direction == 'w' && !guideWestOk()) return CE_SLEW_ERR_OUTSIDE_LIMITS;
+  // 已确认的物理限位反向退出优先于可能失真的软件坐标限制
+  if (!escapingPhysicalLimitAxis1 && direction == 'e' && !guideEastOk()) return CE_SLEW_ERR_OUTSIDE_LIMITS;
+  if (!escapingPhysicalLimitAxis1 && direction == 'w' && !guideWestOk()) return CE_SLEW_ERR_OUTSIDE_LIMITS;
   if (!escapingPhysicalLimitAxis1 && guideRate < 3 && (generalError == ERR_ALT_MIN ||
                                                        generalError == ERR_LIMIT_SENSE ||
                                                        generalError == ERR_DEC ||
@@ -209,8 +210,9 @@ CommandErrors startGuideAxis2(char direction, int guideRate, long guideDuration,
                                 (direction == 's' && Axis2_LimitLock == 1));
 #endif
 
-  if (direction == 'n' && !guideNorthOk()) return CE_SLEW_ERR_OUTSIDE_LIMITS;
-  if (direction == 's' && !guideSouthOk()) return CE_SLEW_ERR_OUTSIDE_LIMITS;
+  // 已确认的物理限位反向退出优先于可能失真的软件坐标限制
+  if (!escapingPhysicalLimitAxis2 && direction == 'n' && !guideNorthOk()) return CE_SLEW_ERR_OUTSIDE_LIMITS;
+  if (!escapingPhysicalLimitAxis2 && direction == 's' && !guideSouthOk()) return CE_SLEW_ERR_OUTSIDE_LIMITS;
   if (!escapingPhysicalLimitAxis2 && guideRate < 3 && (generalError == ERR_ALT_MIN ||
                                                        generalError == ERR_LIMIT_SENSE ||
                                                        generalError == ERR_DEC ||

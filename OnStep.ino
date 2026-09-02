@@ -629,16 +629,16 @@ void loop2() {
         }
 
         // =========================================================
-        // 3. 智能记录锁死方向 (解决静止打断死锁)
+        // 3. 记录触发方向并保留静止状态兜底判断
         // =========================================================
         
         // --- Axis 1 智能判断 ---
         if (Axis1_LimitLock == 0) {
-            // 如果是 GOTO 过程中撞击，意图明确，直接记录
-            if (currentMotionDir1 != 0 && trackingState == TrackingMoveTo) {
+            // 手动控制和 GOTO 都优先记录限位触发瞬间的运动方向
+            if (currentMotionDir1 != 0) {
                 Axis1_LimitLock = currentMotionDir1;
             } else {
-                // 如果是静止状态下触发(被打断/震动)，通过绝对坐标推断撞了哪边
+                // 静止状态下触发时才通过绝对坐标推断限位方向
                 long threshold = 500L; // 容错阈值
                 if (posAxis1 > threshold) Axis1_LimitLock = -1;       // 在西半区，锁西 (-1)
                 else if (posAxis1 < -threshold) Axis1_LimitLock = 1;  // 在东半区，锁东 (1)
@@ -648,7 +648,8 @@ void loop2() {
 
         // --- Axis 2 智能判断 ---
         if (Axis2_LimitLock == 0) {
-            if (currentMotionDir2 != 0 && trackingState == TrackingMoveTo) {
+            // 手动控制和 GOTO 都优先记录限位触发瞬间的运动方向
+            if (currentMotionDir2 != 0) {
                 Axis2_LimitLock = currentMotionDir2;
             } else {
                 long threshold = 500L;

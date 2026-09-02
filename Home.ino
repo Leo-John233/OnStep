@@ -351,6 +351,10 @@ bool isHoming() {
 // 然后，第一个 gotoEqu 函数会设置码头侧并启用跟踪功能
 CommandErrors setHome() {
   if (isSlewing()) return CE_MOUNT_IN_MOTION;
+#if LIMIT_SENSE != OFF
+  // 物理限位释放前禁止重置坐标和清除限位方向锁
+  if (digitalRead(LimitPin) == LIMIT_SENSE_STATE) return CE_SLEW_ERR_OUTSIDE_LIMITS;
+#endif
 
   // back to startup state
   reactivateBacklashComp();
