@@ -16,6 +16,47 @@ unsigned long findHomeTimeout = 0L;
 unsigned long offsetTimeoutAxis1 = 0L;
 unsigned long offsetTimeoutAxis2 = 0L;
 
+// 可选的第三阶段：仅在至少一轴设置了偏置时调用。
+bool startHomeOffset() {
+  findHomeMode = FH_OFFSET;
+  double secPerDeg = 3600.0 / (double)guideRates[HOME_OFFSET_RATE];
+  CommandErrors e1 = CE_NONE;
+  CommandErrors e2 = CE_NONE;
+
+  if (HOME_OFFSET_AXIS1 != 0.0 && AXIS2_TANGENT_ARM == OFF) {
+    char dir1 = (HOME_OFFSET_AXIS1 > 0) ? 'e' : 'w';
+    unsigned long duration1 = (unsigned long)(fabs(HOME_OFFSET_AXIS1) * secPerDeg * 1000.0);
+    e1 = startGuideAxis1(dir1, HOME_OFFSET_RATE, 0, false);
+    if (e1 == CE_NONE) offsetTimeoutAxis1 = millis() + duration1; else offsetTimeoutAxis1 = 0;
+  } else {
+    offsetTimeoutAxis1 = 0;
+  }
+
+  if (HOME_OFFSET_AXIS2 != 0.0) {
+    char dir2 = (HOME_OFFSET_AXIS2 > 0) ? 'n' : 's';
+    unsigned long duration2 = (unsigned long)(fabs(HOME_OFFSET_AXIS2) * secPerDeg * 1000.0);
+    e2 = startGuideAxis2(dir2, HOME_OFFSET_RATE, 0, false, true);
+    if (e2 == CE_NONE) offsetTimeoutAxis2 = millis() + duration2; else offsetTimeoutAxis2 = 0;
+  } else {
+    offsetTimeoutAxis2 = 0;
+  }
+
+  if (e1 != CE_NONE || e2 != CE_NONE) {
+    findHomeMode = FH_OFF;
+    generalError = ERR_LIMIT_SENSE;
+    stopSlewingAndTracking(SS_ALL_FAST);
+    VLF("MSG: Homing phase 3 failed");
+    return false;
+  }
+
+  if (offsetTimeoutAxis1 == 0 && offsetTimeoutAxis2 == 0) {
+    findHomeMode = FH_DONE;
+  } else {
+    VLF("MSG: Homing started phase 3 (Zero Offset)");
+  }
+  return true;
+}
+
 void checkHome() {
   // 人工停止或硬故障一旦请求取消 Home，就只负责让双轴安全停稳
   // 取消路径不得再经过任何正常阶段转换，更不能进入 FH_DONE 恢复位置可信状态
@@ -67,49 +108,16 @@ void checkHome() {
   }
 
   // =======================================================================
-  // 3. 第三阶段启动：第二阶段停稳后，使用 Config.h 中选定的速度档位计算时间并启动
+  // 3. 第二阶段停稳后：零偏置直接完成，否则启动独立的偏置阶段
   // =======================================================================
   if (findHomeMode == FH_IDLE2 && guideDirAxis1 == 0 && guideDirAxis2 == 0) {
-    findHomeMode = FH_OFFSET; // 进入偏置阶段
-
-    // 第三阶段只属于 HOME_SENSE 自动回零；这里已经位于 #if HOME_SENSE != OFF 内
-    // 使用 Config.h 中选定的速度档位计算时间，不额外修改 Config.h
-    double secPerDeg = 3600.0 / (double)guideRates[HOME_OFFSET_RATE];
-    CommandErrors e1 = CE_NONE;
-    CommandErrors e2 = CE_NONE;
-
-    // Axis 1 (赤经) 偏置计算与启动
-    if (HOME_OFFSET_AXIS1 != 0.0 && AXIS2_TANGENT_ARM == OFF) {
-      char dir1 = (HOME_OFFSET_AXIS1 > 0) ? 'e' : 'w';
-      unsigned long duration1 = (unsigned long)(fabs(HOME_OFFSET_AXIS1) * secPerDeg * 1000.0);
-      e1 = startGuideAxis1(dir1, HOME_OFFSET_RATE, 0, false);
-      if (e1 == CE_NONE) offsetTimeoutAxis1 = millis() + duration1; else offsetTimeoutAxis1 = 0;
-    } else {
+    if (HOME_OFFSET_AXIS1 == 0.0 && HOME_OFFSET_AXIS2 == 0.0) {
+      // 不进入 FH_OFFSET，不读取偏置速度，也不启动偏置运动。
       offsetTimeoutAxis1 = 0;
-    }
-
-    // Axis 2 (赤纬) 偏置计算与启动
-    if (HOME_OFFSET_AXIS2 != 0.0) {
-      char dir2 = (HOME_OFFSET_AXIS2 > 0) ? 'n' : 's';
-      unsigned long duration2 = (unsigned long)(fabs(HOME_OFFSET_AXIS2) * secPerDeg * 1000.0);
-      e2 = startGuideAxis2(dir2, HOME_OFFSET_RATE, 0, false, true);
-      if (e2 == CE_NONE) offsetTimeoutAxis2 = millis() + duration2; else offsetTimeoutAxis2 = 0;
-    } else {
       offsetTimeoutAxis2 = 0;
-    }
-
-    if (e1 != CE_NONE || e2 != CE_NONE) {
-      findHomeMode = FH_OFF;
-      generalError = ERR_LIMIT_SENSE;
-      stopSlewingAndTracking(SS_ALL_FAST);
-      VLF("MSG: Homing phase 3 failed");
-      return;
-    }
-
-    if (offsetTimeoutAxis1 == 0 && offsetTimeoutAxis2 == 0) {
       findHomeMode = FH_DONE;
-    } else {
-      VLF("MSG: Homing started phase 3 (Zero Offset)");
+    } else if (!startHomeOffset()) {
+      return;
     }
   }
 
