@@ -503,6 +503,9 @@ void loop() {
 }
 
 void loop2() {
+  // 每轮先接收命令，避免周期任务持续到期时停止指令得不到处理。
+  processCommands();
+
 #if HOME_SENSE != OFF
   // 监听自动回原点 (Homing) 状态
   static bool wasHoming = false;
@@ -595,17 +598,17 @@ void loop2() {
     if (limit_reading == LIMIT_SENSE_STATE) {
       
       lastLimitTriggerTime = currentTime;
-      // 回零模式直接放行（最高权限）
-      if (isHoming()) {
+      // 回零期间只跳过限位制动，继续执行主循环中的其余任务。
+      const bool homing = isHoming();
+      if (homing) {
         Axis1_LimitLock=0;
         Axis2_LimitLock=0;
-        return;
       }
         // =========================================================
         // 1. 物理限位触发，立即停止所有运动
         // =========================================================
-      delay(2);
-      if (digitalRead(LimitPin) == LIMIT_SENSE_STATE) {
+      if (!homing) delay(2);
+      if (!homing && digitalRead(LimitPin) == LIMIT_SENSE_STATE) {
         // =========================================================
         // 2. 统一方向定义
         // =========================================================
@@ -882,9 +885,6 @@ void loop2() {
     } else
     // 在切线臂模式下自动清除错误
     if (AXIS2_TANGENT_ARM == ON && (trackingState == TrackingSidereal && generalError == ERR_DEC)) generalError=ERR_NONE;
-  } else {
-    // 命令处理 (COMMAND PROCESSING) 
-    processCommands();
   }
 }
 
