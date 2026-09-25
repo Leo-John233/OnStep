@@ -279,7 +279,6 @@ void moveTo() {
             homeMount=false;
             if (AXIS2_TANGENT_ARM == OFF) atHome=true;
             completePositionRecovery();
-            safetyLimitsOn=true;
             VLF("MSG: Homing done");
           }
         } else {

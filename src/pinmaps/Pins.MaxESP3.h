@@ -71,9 +71,8 @@
 #define Axis2_DECAY    Axis2_M2     // Decay mode(衰变模式)
 #define Axis2_HOME         Aux6     // Sense home position(感知原点位置)
 
-// MaxESP3 的轴1和轴2共用 M0/M1 引脚；在 SPI 模式下，这两个引脚分别作为 MOSI/SCK。
-// SPI 驱动器仍可通过各自独立的 M2/CS 片选信号分别控制。
-// 对于 TMC2209 等独立模式驱动器，两个轴必须始终使用相同且固定的硬件细分模式。
+// M0/M1 是共享的 MOSI/SCK 网络 SPI 驱动程序使用独立的 CS 引脚
+// 使用TMC2209且在脉冲模式下必须将两个轴都保持在同一个微步模式
 #define AXIS12_DRIVER_MODE_PINS_SHARED
 
 // For rotator stepper driver

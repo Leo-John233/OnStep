@@ -6,6 +6,8 @@
 // 1.更新状态机枚举，必须包含 FH_IDLE2 和 FH_OFFSET
 enum findHomeModes { FH_OFF, FH_FAST, FH_IDLE, FH_SLOW, FH_IDLE2, FH_OFFSET, FH_DONE };
 findHomeModes findHomeMode = FH_OFF;
+bool homeAbortRequested = false;
+bool homeAbortRestoreSafetyLimits = true;
 int PierSideStateAxis1 = LOW;
 int PierSideStateAxis2 = LOW;
 unsigned long findHomeTimeout = 0L;
@@ -14,7 +16,74 @@ unsigned long findHomeTimeout = 0L;
 unsigned long offsetTimeoutAxis1 = 0L;
 unsigned long offsetTimeoutAxis2 = 0L;
 
+// 可选的第三阶段：仅在至少一轴设置了偏置时调用。
+bool startHomeOffset() {
+  findHomeMode = FH_OFFSET;
+  double secPerDeg = 3600.0 / (double)guideRates[HOME_OFFSET_RATE];
+  CommandErrors e1 = CE_NONE;
+  CommandErrors e2 = CE_NONE;
+
+  if (HOME_OFFSET_AXIS1 != 0.0 && AXIS2_TANGENT_ARM == OFF) {
+    char dir1 = (HOME_OFFSET_AXIS1 > 0) ? 'e' : 'w';
+    unsigned long duration1 = (unsigned long)(fabs(HOME_OFFSET_AXIS1) * secPerDeg * 1000.0);
+    e1 = startGuideAxis1(dir1, HOME_OFFSET_RATE, 0, false);
+    if (e1 == CE_NONE) offsetTimeoutAxis1 = millis() + duration1; else offsetTimeoutAxis1 = 0;
+  } else {
+    offsetTimeoutAxis1 = 0;
+  }
+
+  if (HOME_OFFSET_AXIS2 != 0.0) {
+    char dir2 = (HOME_OFFSET_AXIS2 > 0) ? 'n' : 's';
+    unsigned long duration2 = (unsigned long)(fabs(HOME_OFFSET_AXIS2) * secPerDeg * 1000.0);
+    e2 = startGuideAxis2(dir2, HOME_OFFSET_RATE, 0, false, true);
+    if (e2 == CE_NONE) offsetTimeoutAxis2 = millis() + duration2; else offsetTimeoutAxis2 = 0;
+  } else {
+    offsetTimeoutAxis2 = 0;
+  }
+
+  if (e1 != CE_NONE || e2 != CE_NONE) {
+    findHomeMode = FH_OFF;
+    generalError = ERR_LIMIT_SENSE;
+    stopSlewingAndTracking(SS_ALL_FAST);
+    VLF("MSG: Homing phase 3 failed");
+    return false;
+  }
+
+  if (offsetTimeoutAxis1 == 0 && offsetTimeoutAxis2 == 0) {
+    findHomeMode = FH_DONE;
+  } else {
+    VLF("MSG: Homing started phase 3 (Zero Offset)");
+  }
+  return true;
+}
+
 void checkHome() {
+  // 人工停止或硬故障一旦请求取消 Home，就只负责让双轴安全停稳
+  // 取消路径不得再经过任何正常阶段转换，更不能进入 FH_DONE 恢复位置可信状态
+  if (homeAbortRequested) {
+    stopGuideAxis1();
+    stopGuideAxis2();
+    offsetTimeoutAxis1 = 0;
+    offsetTimeoutAxis2 = 0;
+
+    if (guideDirAxis1 == 0 && guideDirAxis2 == 0) {
+      findHomeMode = FH_OFF;
+      homeAbortRequested = false;
+      findHomeTimeout = 0;
+      safetyLimitsOn = homeAbortRestoreSafetyLimits;
+      homeAbortRestoreSafetyLimits = true;
+      trackingState = TrackingNone;
+      lastTrackingState = TrackingNone;
+      abortTrackingState = TrackingNone;
+      trackingSyncSeconds = 0;
+      gotoAbortState = GOTO_ABORT_NONE;
+      gotoStartTrackingOnSuccess = false;
+      atHome = false;
+      VLF("MSG: Homing aborted; Home/Set Home required");
+    }
+    return;
+  }
+
   // 1. 第一/第二阶段的超时与错误检测
   if (findHomeMode == FH_FAST || findHomeMode == FH_SLOW) {
     if ((long)(millis()-findHomeTimeout) > 0L || (guideDirAxis1 == 0 && guideDirAxis2 == 0)) {
@@ -39,50 +108,16 @@ void checkHome() {
   }
 
   // =======================================================================
-  // 3. 第三阶段启动：第二阶段停稳后，使用 Config.h 中选定的速度档位计算时间并启动
+  // 3. 第二阶段停稳后：零偏置直接完成，否则启动独立的偏置阶段
   // =======================================================================
   if (findHomeMode == FH_IDLE2 && guideDirAxis1 == 0 && guideDirAxis2 == 0) {
-    findHomeMode = FH_OFFSET; // 进入偏置阶段
-
-    // 第三阶段只属于 HOME_SENSE 自动回零；这里已经位于 #if HOME_SENSE != OFF 内
-    // 使用 Config.h 中选定的速度档位计算时间，不额外修改 Config.h
-    double secPerDeg = 3600.0 / (double)guideRates[HOME_OFFSET_RATE];
-    CommandErrors e1 = CE_NONE;
-    CommandErrors e2 = CE_NONE;
-
-    // Axis 1 (赤经) 偏置计算与启动
-    if (HOME_OFFSET_AXIS1 != 0.0 && AXIS2_TANGENT_ARM == OFF) {
-      char dir1 = (HOME_OFFSET_AXIS1 > 0) ? 'e' : 'w';
-      unsigned long duration1 = (unsigned long)(fabs(HOME_OFFSET_AXIS1) * secPerDeg * 1000.0);
-      e1 = startGuideAxis1(dir1, HOME_OFFSET_RATE, 0, false);
-      if (e1 == CE_NONE) offsetTimeoutAxis1 = millis() + duration1; else offsetTimeoutAxis1 = 0;
-    } else {
+    if (HOME_OFFSET_AXIS1 == 0.0 && HOME_OFFSET_AXIS2 == 0.0) {
+      // 不进入 FH_OFFSET，不读取偏置速度，也不启动偏置运动。
       offsetTimeoutAxis1 = 0;
-    }
-
-    // Axis 2 (赤纬) 偏置计算与启动
-    if (HOME_OFFSET_AXIS2 != 0.0) {
-      char dir2 = (HOME_OFFSET_AXIS2 > 0) ? 'n' : 's';
-      unsigned long duration2 = (unsigned long)(fabs(HOME_OFFSET_AXIS2) * secPerDeg * 1000.0);
-      e2 = startGuideAxis2(dir2, HOME_OFFSET_RATE, 0, false, true);
-      if (e2 == CE_NONE) offsetTimeoutAxis2 = millis() + duration2; else offsetTimeoutAxis2 = 0;
-    } else {
       offsetTimeoutAxis2 = 0;
-    }
-
-    if (e1 != CE_NONE || e2 != CE_NONE) {
-      findHomeMode = FH_OFF;
-      safetyLimitsOn = true;
-      generalError = ERR_LIMIT_SENSE;
-      stopSlewingAndTracking(SS_ALL_FAST);
-      VLF("MSG: Homing phase 3 failed");
-      return;
-    }
-
-    if (offsetTimeoutAxis1 == 0 && offsetTimeoutAxis2 == 0) {
       findHomeMode = FH_DONE;
-    } else {
-      VLF("MSG: Homing started phase 3 (Zero Offset)");
+    } else if (!startHomeOffset()) {
+      return;
     }
   }
 
@@ -124,9 +159,9 @@ void checkHome() {
       atHome=true;
     #endif
 
-    // 真实回原点完成后，所有结构类型都重新建立可信坐标基准
+    // 真实回原点完成后重新建立可信坐标基准；沿用原版 OnStep 的限位时序，
+    // 自动 Home 成功后保持坐标软件限位关闭，直到原版路径再次启用
     completePositionRecovery();
-    safetyLimitsOn = true;
     abortGoto = 0;
     lastTrackingState = TrackingNone;
     abortTrackingState = TrackingNone;
@@ -153,9 +188,47 @@ void StopAxis2() {
 
 #endif
 
+// 取消正在执行的 Home，停止过程中以及停稳后都保持位置参考不可信
+// 只有重新完整 Find Home 或用户确认机械位置后 Set Home 才能解除普通 GOTO 锁
+void requestHomeAbort(bool restoreSafetyLimits) {
+  bool homingActive = homeMount;
+
+#if HOME_SENSE != OFF
+  if (findHomeMode != FH_OFF) {
+    if (!homeAbortRequested) homeAbortRestoreSafetyLimits = restoreSafetyLimits;
+    else homeAbortRestoreSafetyLimits = homeAbortRestoreSafetyLimits && restoreSafetyLimits;
+    homeAbortRequested = true;
+    offsetTimeoutAxis1 = 0;
+    offsetTimeoutAxis2 = 0;
+    homingActive = true;
+  }
+#endif
+
+  if (!homingActive) return;
+
+  invalidatePositionReference();
+  gotoStartTrackingOnSuccess = false;
+  abortTrackingState = TrackingNone;
+  trackingSyncSeconds = 0;
+  atHome = false;
+  if (trackingState == TrackingMoveTo) gotoAbortState = GOTO_ABORT_POSITION_LOST;
+  stopGuideAxis1();
+  stopGuideAxis2();
+  VLF("MSG: Homing abort requested");
+}
+
 // moves telescope to the home position, then stops tracking
 // 将望远镜移回初始位置，然后停止跟踪
 CommandErrors goHome(bool fast) {
+#if LIMIT_SENSE != OFF
+  // 物理限位恢复必须先由用户手动移出限位区域
+  // 限位输入释放并稳定 500 ms 后才允许 Home，ERR_LIMIT_SENSE 保留到 Home/Set Home 成功
+  const bool physicalLimitActive = digitalRead(LimitPin) == LIMIT_SENSE_STATE;
+  const bool physicalLimitReleaseSettling =
+    generalError == ERR_LIMIT_SENSE && (unsigned long)(millis() - lastLimitTriggerTime) <= 500UL;
+  if (physicalLimitActive || physicalLimitReleaseSettling) return CE_SLEW_ERR_OUTSIDE_LIMITS;
+#endif
+
   // 恢复性 Home 可覆盖残留的 Parked 标记
 #if HOME_SENSE == OFF
   const bool homeMayOverridePark = positionHomeReturnOnly();
@@ -187,6 +260,9 @@ CommandErrors goHome(bool fast) {
   if (e == CE_SLEW_ERR_IN_STANDBY) e = CE_NONE;
 
   if (findHomeMode != FH_OFF) return CE_MOUNT_IN_MOTION;
+
+  homeAbortRequested=false;
+  homeAbortRestoreSafetyLimits=true;
 
   // stop tracking
   // 停止跟踪
@@ -245,15 +321,11 @@ CommandErrors goHome(bool fast) {
     if (e == CE_NONE) VLF("MSG: Homing started phase 2"); else VLF("MSG: Homing start phase 2 failed");
   }
   if (e != CE_NONE) {
-    findHomeMode = FH_OFF;
-    safetyLimitsOn = true;
     stopSlewingAndTracking(SS_ALL_FAST);
   }
   return e;
 #else
   if (e != CE_NONE) return e;
-
-  if (positionHomeReturnOnly()) safetyLimitsOn=false;
 
   abortTrackingState=trackingState;
 
@@ -287,6 +359,10 @@ bool isHoming() {
 // 然后，第一个 gotoEqu 函数会设置码头侧并启用跟踪功能
 CommandErrors setHome() {
   if (isSlewing()) return CE_MOUNT_IN_MOTION;
+#if LIMIT_SENSE != OFF
+  // 物理限位释放前禁止重置坐标和清除限位方向锁
+  if (digitalRead(LimitPin) == LIMIT_SENSE_STATE) return CE_SLEW_ERR_OUTSIDE_LIMITS;
+#endif
 
   // back to startup state
   reactivateBacklashComp();

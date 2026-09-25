@@ -1099,14 +1099,20 @@ void processCommands() {
       if (command[1] == 'F' && parameter[0] == 0)  {
         focuserRotatorSave();
         commandError=setHome(); boolReply=false;
-        if (commandError == CE_MOUNT_IN_MOTION) stopSlewingAndTracking(SS_ALL_FAST);
+        if (commandError == CE_MOUNT_IN_MOTION) {
+          if (isHoming()) requestHomeAbort(true);
+          stopSlewingAndTracking(SS_ALL_FAST);
+        }
       } else 
 // :hC#       Moves telescope to the home position
 //            Returns: Nothing
       if (command[1] == 'C' && parameter[0] == 0)  {
         focuserRotatorSave();
         commandError=goHome(true); boolReply=false;
-        if (commandError == CE_MOUNT_IN_MOTION) stopSlewingAndTracking(SS_ALL_FAST);
+        if (commandError == CE_MOUNT_IN_MOTION) {
+          if (isHoming()) requestHomeAbort(true);
+          stopSlewingAndTracking(SS_ALL_FAST);
+        }
       } else 
 // :hP#       Goto the Park Position
 //            Return: 0 on failure
@@ -1463,19 +1469,27 @@ if (command[1] == 'S' && parameter[0] == 0)  {
 //            Returns: Nothing
       if (command[0] == 'Q') {
         if (command[1] == 0) {
+          if (isHoming()) requestHomeAbort(true);
           stopSlewingAndTracking(SS_ALL_FAST);
           boolReply=false; 
         } else
 // :Qe# Qw#   Halt east/westward Slews
 //            Returns: Nothing
         if ((command[1] == 'e' || command[1] == 'w') && parameter[0] == 0) {
-          stopGuideAxis1();
+          // Home 是双轴状态机，人工停止任一轴都应取消整个 Home
+          if (isHoming()) {
+            requestHomeAbort(true);
+            stopSlewingAndTracking(SS_ALL_FAST);
+          } else stopGuideAxis1();
           boolReply=false;
         } else
 // :Qn# Qs#   Halt north/southward Slews
 //            Returns: Nothing
         if ((command[1] == 'n' || command[1] == 's') && parameter[0] == 0) {
-          stopGuideAxis2();
+          if (isHoming()) {
+            requestHomeAbort(true);
+            stopSlewingAndTracking(SS_ALL_FAST);
+          } else stopGuideAxis2();
           boolReply=false;
         } else commandError=CE_CMD_UNKNOWN;
       } else
