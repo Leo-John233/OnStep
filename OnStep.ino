@@ -226,7 +226,7 @@ void setup() {
   fa.init(-1,AddonResetPin,AddonBootModePin);
   // 恢复实机验证有效的等待位置和时长；最短时间及复位根因尚未确认。
   // 仅刷写固件等待，正常运行固件不增加抱闸释放到电机使能的延时。
-  delay(5000);
+  delay(500);
 #elif defined(AddonTriggerPin)
   fa.init(AddonTriggerPin,AddonResetPin,AddonBootModePin);
 #endif
@@ -236,7 +236,7 @@ void setup() {
 #if DEBUG != OFF
   // 提前初始化 USB 串口调试，以便在需要时可以使用 DebugSer.print() 进行调试
   DebugSer.begin(9600);
-  delay(500); DebugSer.flush(); VLF(""); VLF("");
+  delay(5000); DebugSer.flush(); VLF(""); VLF("");
 #endif
 
   // 打印欢迎信息/版本号
