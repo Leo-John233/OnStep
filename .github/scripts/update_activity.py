@@ -21,7 +21,7 @@ OUTPUT_DIR = ROOT / "site"
 
 BASE_BRANCH = os.getenv(
     "ACTIVITY_BASE_BRANCH",
-    "OnStep4.24-FeatureRelease",
+    "OnStep4.24-Release",
 )
 
 BRANCH_PATTERN = os.getenv(
