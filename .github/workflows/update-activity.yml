@@ -41,13 +41,13 @@ jobs:
           echo "Available release branches:"
           git for-each-ref \
             --format='%(refname:short)' \
-            'refs/remotes/origin/release-*'
+            'refs/remotes/origin/OnStep*'
 
       - name: Generate repository activity
         env:
           ACTIVITY_TIMEZONE: Asia/Shanghai
           ACTIVITY_BASE_BRANCH: OnStep4.24-FeatureRelease
-          ACTIVITY_BRANCH_PATTERN: "OnStep4.24-FeatureRelease"
+          ACTIVITY_BRANCH_PATTERN: "OnStep*"
         run: |
           python3 .github/scripts/update_activity.py
 
