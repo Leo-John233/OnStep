@@ -1,17 +1,15 @@
 name: Update Repository Activity
 
 on:
+  # Refresh immediately on activity in any functional branch.
   push:
     branches:
-      - "OnStep4.24-FeatureRelease"
-
+      - "**"
+      - "!OnStep4.24-Original"
   workflow_dispatch:
-
-  # 每天刷新一次最近 7 天、年度贡献图和全部分支统计
-  # GitHub Actions cron 使用 UTC
-  # 00:15 UTC = Asia/Shanghai 08:15
+  # Beijing time: Monday 09:27 (UTC Monday 01:27)
   schedule:
-    - cron: "15 0 * * *"
+    - cron: "27 1 * * 1"
 
 concurrency:
   group: repository-activity-pages
@@ -24,8 +22,117 @@ permissions:
   id-token: write
 
 jobs:
+  decide:
+    name: Check adaptive refresh schedule
+    runs-on: ubuntu-latest
+    outputs:
+      refresh: ${{ steps.direct.outputs.refresh || steps.timer.outputs.refresh }}
+
+    steps:
+      - name: Refresh immediately on Push or manual run
+        id: direct
+        if: github.event_name != 'schedule'
+        run: echo "refresh=true" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout default branch
+        if: github.event_name == 'schedule'
+        uses: actions/checkout@v6
+        with:
+          ref: OnStep4.24-FeatureRelease
+          fetch-depth: 1
+
+      - name: Fetch latest branch tips and hidden clock
+        if: github.event_name == 'schedule'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin \
+            "+refs/heads/*:refs/remotes/origin/*" --prune
+
+          CLOCK_REF="refs/notes/onstep-activity-refresh-clock"
+          if git ls-remote --exit-code origin "$CLOCK_REF" >/dev/null; then
+            git fetch --no-tags origin "+$CLOCK_REF:$CLOCK_REF"
+          else
+            code=$?
+            if [[ "$code" -ne 2 ]]; then
+              echo "::error::Unable to inspect the remote Git Notes clock."
+              exit "$code"
+            fi
+          fi
+
+      - name: Calculate adaptive interval
+        id: timer
+        if: github.event_name == 'schedule'
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os
+          import subprocess
+          import time
+
+          def git(*args):
+              return subprocess.check_output(["git", *args], text=True).strip()
+
+          latest = 0
+          # Each new non-Original branch is discovered automatically.
+          branches = git(
+              "for-each-ref",
+              "--format=%(refname:short)%09%(committerdate:unix)",
+              "refs/remotes/origin/",
+          )
+          for line in branches.splitlines():
+              if "\t" not in line:
+                  continue
+              name, timestamp = line.split("\t", 1)
+              if name in ("origin/HEAD", "origin/OnStep4.24-Original"):
+                  continue
+              if timestamp.isdigit():
+                  latest = max(latest, int(timestamp))
+
+          # Git Notes holds the last manual reset; the ref is invisible in Tags.
+          clock = subprocess.run(
+              ["git", "log", "-1", "--format=%ct", "refs/notes/onstep-activity-refresh-clock"],
+              capture_output=True,
+              text=True,
+              check=False,
+          )
+          if clock.returncode == 0 and clock.stdout.strip().isdigit():
+              latest = max(latest, int(clock.stdout.strip()))
+
+          if latest == 0:
+              refresh, reason = True, "No recorded activity; initialize by refreshing"
+          else:
+              elapsed_days = max(0, (int(time.time()) - latest) // 86400)
+              elapsed_weeks = (elapsed_days + 1) // 7  # Allow one day of cron jitter
+              if elapsed_days < 6:
+                  refresh, reason = False, "Recent activity: no scheduled refresh needed"
+              elif elapsed_days >= 182:
+                  refresh, reason = False, "Paused after 26 weeks of inactivity"
+              else:
+                  if elapsed_days < 28:
+                      interval = 1
+                  elif elapsed_days < 56:
+                      interval = 2
+                  elif elapsed_days < 112:
+                      interval = 4
+                  else:
+                      interval = 8
+                  refresh = elapsed_weeks % interval == 0
+                  reason = (
+                      f"{elapsed_days} inactive days; "
+                      f"scheduled refresh every {interval} week(s)"
+                  )
+
+          print(reason)
+          print(f"Refresh dashboard: {refresh}")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"refresh={str(refresh).lower()}\n")
+          PY
+
   build:
     name: Generate activity
+    needs: decide
+    if: needs.decide.outputs.refresh == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -37,19 +144,24 @@ jobs:
 
       - name: Fetch all repository branches
         run: |
-          git fetch origin "+refs/heads/*:refs/remotes/origin/*" --prune
-          echo "Available release branches:"
-          git for-each-ref \
-            --format='%(refname:short)' \
-            'refs/remotes/origin/OnStep*'
+          git fetch --no-tags origin \
+            "+refs/heads/*:refs/remotes/origin/*" --prune
+          git for-each-ref --format='%(refname:short)' 'refs/remotes/origin/'
+
+      - name: Fetch upstream project
+        run: |
+          git remote add upstream https://github.com/hjd1964/OnStep.git
+          git fetch --no-tags upstream \
+            "+refs/heads/release-4.24:refs/remotes/upstream/release-4.24"
 
       - name: Generate repository activity
         env:
           ACTIVITY_TIMEZONE: Asia/Shanghai
           ACTIVITY_BASE_BRANCH: OnStep4.24-FeatureRelease
-          ACTIVITY_BRANCH_PATTERN: "OnStep*"
-        run: |
-          python3 .github/scripts/update_activity.py
+          ACTIVITY_ORIGINAL_BRANCH: OnStep4.24-Original
+          ACTIVITY_BRANCH_PATTERN: "*"
+          ACTIVITY_UPSTREAM_BRANCH: release-4.24
+        run: python3 .github/scripts/update_activity.py
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
@@ -62,9 +174,7 @@ jobs:
   deploy:
     name: Deploy activity
     runs-on: ubuntu-latest
-    needs:
-      - build
-
+    needs: build
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -73,3 +183,50 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+  reset-clock:
+    name: Reset hidden activity clock
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: >-
+      ${{
+        github.event_name == 'workflow_dispatch' &&
+        needs.deploy.result == 'success'
+      }}
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout default branch
+        uses: actions/checkout@v6
+        with:
+          ref: OnStep4.24-FeatureRelease
+          fetch-depth: 1
+
+      - name: Load existing hidden clock
+        shell: bash
+        run: |
+          set -euo pipefail
+          CLOCK_REF="refs/notes/onstep-activity-refresh-clock"
+          if git ls-remote --exit-code origin "$CLOCK_REF" >/dev/null; then
+            git fetch --no-tags origin "+$CLOCK_REF:$CLOCK_REF"
+          else
+            code=$?
+            if [[ "$code" -ne 2 ]]; then
+              echo "::error::Unable to inspect the remote Git Notes clock."
+              exit "$code"
+            fi
+          fi
+
+      - name: Reset clock in Git Notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          CLOCK_REF="refs/notes/onstep-activity-refresh-clock"
+          git notes --ref="$CLOCK_REF" add -f \
+            -m "Activity refresh clock reset $(date -u +%FT%TZ)" HEAD
+          git push origin "$CLOCK_REF:$CLOCK_REF"
+          echo "Hidden activity clock updated successfully."
