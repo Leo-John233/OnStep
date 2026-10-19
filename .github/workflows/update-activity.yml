@@ -3,7 +3,7 @@ name: Update Repository Activity
 on:
   push:
     branches:
-      - "release-*"
+      - "OnStep4.24-FeatureRelease"
 
   workflow_dispatch:
 
@@ -32,7 +32,7 @@ jobs:
       - name: Checkout statistics generator
         uses: actions/checkout@v6
         with:
-          ref: release-4.24
+          ref: OnStep4.24-FeatureRelease
           fetch-depth: 0
 
       - name: Fetch all repository branches
@@ -46,8 +46,8 @@ jobs:
       - name: Generate repository activity
         env:
           ACTIVITY_TIMEZONE: Asia/Shanghai
-          ACTIVITY_BASE_BRANCH: release-4.24
-          ACTIVITY_BRANCH_PATTERN: "release-*"
+          ACTIVITY_BASE_BRANCH: OnStep4.24-FeatureRelease
+          ACTIVITY_BRANCH_PATTERN: "OnStep4.24-FeatureRelease"
         run: |
           python3 .github/scripts/update_activity.py
 
