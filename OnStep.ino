@@ -224,12 +224,15 @@ void setup() {
   // 初始化 ESP8266 插件（Addon）烧录器
 #if SERIAL_B_ESP_FLASHING == ON
   fa.init(-1,AddonResetPin,AddonBootModePin);
+  // 恢复实机验证有效的等待位置和时长；最短时间及复位根因尚未确认。
+  // 仅刷写固件等待，正常运行固件不增加抱闸释放到电机使能的延时。
+  delay(500);
 #elif defined(AddonTriggerPin)
   fa.init(AddonTriggerPin,AddonResetPin,AddonBootModePin);
 #endif
 
-  // 等待半秒钟，让所有连接的设备启动完毕，然后再开始设置引脚
-  delay(10);//[修改] 缩短等待时间，原始值500
+  // 保留正常固件的快速启动等待。
+  delay(10);
 #if DEBUG != OFF
   // 提前初始化 USB 串口调试，以便在需要时可以使用 DebugSer.print() 进行调试
   DebugSer.begin(9600);
@@ -244,8 +247,8 @@ void setup() {
   HAL_Initialize();
 
   VLF("MSG: Init serial");
-  // 等待半秒钟，让串口缓冲区清空，然后再可能需要重启调试端口
-  delay(10);// [修改2] 缩短串口缓冲等待，原始值500
+  // 串口初始化前的短暂等待。
+  delay(10);
   SerialA.begin(SERIAL_A_BAUD_DEFAULT);
 #ifdef HAL_SERIAL_B_ENABLED
   #ifdef SERIAL_B_RX
@@ -278,8 +281,8 @@ void setup() {
   SerialST4.begin();
 #endif
 
-  // 再等待两秒钟，以确保串口完全上线
-  delay(100);// [修改3] 缩短串口上线等待 (从2000改到100，兼容SPI初始化时间)，原始值2000
+  // 保留较短的串口启动等待，避免延后电机使能。
+  delay(100);
   // 根据 Config.h 和 PinMap.h 中的定义设置输入/输出引脚
   VLF("MSG: Init pins");
   initPins();
@@ -470,7 +473,7 @@ void setup() {
 
   // 最后清除通信通道
   VLF("MSG: Serial buffer flush");
-  delay(10);// [修改4] 缩短最后的缓冲清除等待，原始值500
+  delay(10);
   SerialA.flush();
   while (SerialA.available()) SerialA.read();
 #ifdef HAL_SERIAL_B_ENABLED

@@ -26,7 +26,7 @@
                                           //   9600，n.其中n=9600，19200，57600，115200（常见波特率）
 #define SERIAL_B_BAUD_DEFAULT        9600 //   9600, n. See (src/HAL/) for your MCU Serial port # etc.                        Option
                                           //   9600, n. 查看 (src/HAL/) 确认你的MCU串口号等信息
-#define SERIAL_B_ESP_FLASHING        OFF  //    OFF, ON Upload ESP8266 WiFi firmware through SERIAL_B with :ESPFLASH# cmd.    Option
+#define SERIAL_B_ESP_FLASHING         ON  //    OFF, ON Upload ESP8266 WiFi firmware through SERIAL_B with :ESPFLASH# cmd.    Option
                                           //    OFF, ON 通过串口B给ESP8266 WiFi模块刷固件（使用 :ESPFLASH# 命令）
 #define SERIAL_C_BAUD_DEFAULT         ON  //    OFF, n, ON for ESP32 Bluetooth.                                               Option
                                           //    OFF, n, 如果是ESP32蓝牙则设为ON
@@ -199,7 +199,7 @@
 #define AXIS1_DRIVER_IRUN            1400 //    OFF, n, (mA.) 跟踪时的电流。根据电机/驱动调整                       Option
 #define AXIS1_DRIVER_IGOTO           1500 //    OFF, n, (mA.) GOTO时的电流。OFF 代表和 IRUN 一样.                  Option
 #define AXIS1_DRIVER_REVERSE          OFF //    OFF, ON 反转运动方向。或者你也可以把电机线反着接.                   <-Often
-#define AXIS1_DRIVER_STATUS       TMC_SPI //    OFF, TMC_SPI, HIGH, LOW.  轮询驱动器状态/故障.                     Option
+#define AXIS1_DRIVER_STATUS       OFF //    OFF, TMC_SPI, HIGH, LOW.  轮询驱动器状态/故障.                     Option
 
 #define AXIS1_LIMIT_MIN              -180 //  -180, n. n= -90..-270 (度). 赤道仪模式下的最小“时角”.                             Adjust
                                           //        n. n=-180..-360 (度). 经纬仪模式下的最小方位角.
@@ -219,7 +219,7 @@
 #define AXIS2_DRIVER_IGOTO           1300 //    OFF, GOTO电流.                                                     Option
 #define AXIS2_DRIVER_POWER_DOWN       OFF //    OFF, ON 停止移动10秒后，或最后一次<=1x导星10分钟后，自动断电.          Option
 #define AXIS2_DRIVER_REVERSE           ON //    OFF, ON 反转方向.                                                  <-Often
-#define AXIS2_DRIVER_STATUS       TMC_SPI //    OFF, TMC_SPI, HIGH, or LOW, 状态检测.                               Option
+#define AXIS2_DRIVER_STATUS       OFF //    OFF, TMC_SPI, HIGH, or LOW, 状态检测.                               Option
 #define AXIS2_TANGENT_ARM             OFF //    OFF, ON +limit range below. Set cntr w/[Reset Home] Return cntr w/[Find Home] Infreq
 
 #define AXIS2_LIMIT_MIN               -90 //    -90, n. n=-90..0 (度). 最小允许赤纬.                                 Infreq
