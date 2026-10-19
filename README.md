@@ -26,15 +26,15 @@
 
 一般使用建议选择：
 
-`release-4.24`
+`OnStep4.24-FeatureRelease`
 
 开发中的功能和未经完整验证的修改位于：
 
-`release-4.24-dev`
+`OnStep4.24-FeatureDev`
 
 原始 OnStep 4.24 基线保存在：
 
-`release-4.24-original`
+`OnStep4.24-Original`
 
 ## 主要修改
 
