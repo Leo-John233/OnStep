@@ -1,0 +1,157 @@
+name: Adaptive Upstream Sync
+
+on:
+  # Beijing time: Monday 09:17 (UTC Monday 01:17)
+  schedule:
+    - cron: "17 1 * * 1"
+  # Manual runs always check upstream and reset the cycle after success.
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: onstep-upstream-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Sync OnStep Original
+    runs-on: ubuntu-latest
+
+    steps:
+      # The workflow file lives on FeatureRelease; only the checkout targets Original.
+      - name: Checkout Original
+        uses: actions/checkout@v4
+        with:
+          ref: OnStep4.24-Original
+          fetch-depth: 1
+
+      # Keep the clock in Git Notes so it does not appear under Releases / Tags.
+      - name: Load hidden sync clock
+        shell: bash
+        run: |
+          set -euo pipefail
+          CLOCK_REF="refs/notes/onstep-upstream-sync-clock"
+          if git ls-remote --exit-code origin "$CLOCK_REF" >/dev/null; then
+            git fetch --no-tags origin "+$CLOCK_REF:$CLOCK_REF"
+          else
+            code=$?
+            if [[ "$code" -ne 2 ]]; then
+              echo "::error::Unable to inspect the remote Git Notes clock."
+              exit "$code"
+            fi
+          fi
+
+      - name: Decide whether to check upstream
+        id: cadence
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import subprocess
+          import time
+
+          clock = subprocess.run(
+              ["git", "log", "-1", "--format=%ct", "refs/notes/onstep-upstream-sync-clock"],
+              capture_output=True,
+              text=True,
+              check=False,
+          )
+          raw = clock.stdout.strip() if clock.returncode == 0 else ""
+          initialize = not raw.isdigit()
+          manual = os.environ["EVENT_NAME"] == "workflow_dispatch"
+
+          if manual:
+              should_check, reason = True, "Manual run: check and reset the clock"
+          elif initialize:
+              should_check, reason = True, "No note clock: initialize after checking"
+          else:
+              elapsed_days = max(0, (int(time.time()) - int(raw)) // 86400)
+              elapsed_weeks = (elapsed_days + 1) // 7  # Allow one day of cron jitter
+
+              if elapsed_days >= 182:
+                  should_check, reason = False, "Paused after 26 weeks of inactivity"
+              elif elapsed_days < 6:
+                  should_check, reason = False, "Less than seven days since last reset"
+              else:
+                  if elapsed_days < 28:
+                      interval = 1
+                  elif elapsed_days < 56:
+                      interval = 2
+                  elif elapsed_days < 112:
+                      interval = 4
+                  else:
+                      interval = 8
+                  should_check = elapsed_weeks % interval == 0
+                  reason = (
+                      f"{elapsed_days} days since last reset; "
+                      f"checking every {interval} week(s)"
+                  )
+
+          print(reason)
+          print(f"Check upstream: {should_check}")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"do_check={str(should_check).lower()}\n")
+              output.write(f"initialize={str(initialize).lower()}\n")
+          PY
+
+      - name: Fetch and fast-forward upstream
+        id: update
+        if: steps.cadence.outputs.do_check == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # A complete local history is required for the ancestry check.
+          if [[ "$(git rev-parse --is-shallow-repository)" == "true" ]]; then
+            git fetch --unshallow --no-tags origin OnStep4.24-Original
+          fi
+
+          git remote add upstream https://github.com/hjd1964/OnStep.git
+          git fetch --no-tags upstream "+refs/heads/release-4.24:refs/remotes/upstream/release-4.24"
+
+          CURRENT="$(git rev-parse HEAD)"
+          UPSTREAM="$(git rev-parse refs/remotes/upstream/release-4.24)"
+
+          if ! git merge-base --is-ancestor "$CURRENT" "$UPSTREAM"; then
+            echo "::error::Original is not an ancestor of upstream/release-4.24. Sync stopped without modifying history."
+            exit 1
+          fi
+
+          if [[ "$CURRENT" == "$UPSTREAM" ]]; then
+            echo "Upstream unchanged; no branch update needed."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git merge --ff-only "$UPSTREAM"
+          git push origin HEAD:refs/heads/OnStep4.24-Original
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          echo "Original fast-forwarded to upstream/release-4.24."
+
+      # Git Notes refs are independent of branches and software-release tags.
+      # Reset when the run is manual, when upstream actually changed, or on first setup.
+      - name: Reset hidden sync clock
+        if: >-
+          ${{
+            steps.cadence.outputs.do_check == 'true' &&
+            (
+              github.event_name == 'workflow_dispatch' ||
+              steps.update.outputs.changed == 'true' ||
+              steps.cadence.outputs.initialize == 'true'
+            )
+          }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          CLOCK_REF="refs/notes/onstep-upstream-sync-clock"
+          git notes --ref="$CLOCK_REF" add -f \
+            -m "Sync clock reset $(date -u +%FT%TZ)" HEAD
+          git push origin "$CLOCK_REF:$CLOCK_REF"
+          echo "Hidden upstream-sync clock updated successfully."
