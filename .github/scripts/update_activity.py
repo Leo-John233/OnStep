@@ -19,8 +19,15 @@ from zoneinfo import ZoneInfo
 ROOT = Path(__file__).resolve().parents[2] if ".github" in str(Path(__file__).resolve()) else Path.cwd()
 OUTPUT_DIR = ROOT / "site"
 
-BASE_BRANCH = os.getenv("ACTIVITY_BASE_BRANCH", "release-4.24")
-BRANCH_PATTERN = os.getenv("ACTIVITY_BRANCH_PATTERN", "release-*")
+BASE_BRANCH = os.getenv(
+    "ACTIVITY_BASE_BRANCH",
+    "OnStep4.24-FeatureRelease",
+)
+
+BRANCH_PATTERN = os.getenv(
+    "ACTIVITY_BRANCH_PATTERN",
+    "OnStep*",
+)
 TIMEZONE_NAME = os.getenv("ACTIVITY_TIMEZONE", "Asia/Shanghai")
 TZ = ZoneInfo(TIMEZONE_NAME)
 
@@ -312,12 +319,18 @@ def repository_statistics(full_history: list[dict]) -> dict:
 def branch_role(branch: str) -> str:
     if branch == BASE_BRANCH:
         return "正式版"
-    if branch.endswith("-dev"):
+
+    name = branch.lower()
+
+    if name.endswith("dev"):
         return "开发版"
-    if branch.endswith("-original"):
+
+    if name.endswith("original"):
         return "原始基线"
-    if branch.endswith("-test") or "test" in branch.lower():
+
+    if "test" in name:
         return "测试版"
+
     return "分支"
 
 
