@@ -163,7 +163,7 @@ Custom modifications and maintenance:
 
 ![Recent Changes](https://leo-john233.github.io/OnStep/recent-changes.svg)
 
-[查看完整提交记录](https://github.com/Leo-John233/OnStep/commits/release-4.24)
+[查看完整提交记录](https://github.com/Leo-John233/OnStep/commits/OnStep4.24-FeatureRelease)
 
 ## 🟩 Repository Activity
 
