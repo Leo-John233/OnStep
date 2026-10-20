@@ -14,6 +14,7 @@ from functools import lru_cache
 from pathlib import Path
 from zoneinfo import ZoneInfo
 from urllib.request import Request, urlopen
+from urllib.parse import urlparse
 
 # 配置
 ROOT = Path(__file__).resolve().parents[2]
@@ -53,7 +54,14 @@ AUTHOR_ALIASES = {
     "Leo-John233": "Leo-John233",
 }
 MAINTAINER = "Leo-John233"
-ORIGINAL_AUTHOR = "Howard Dutton"
+# 2026-05-12 是本仓库创建日，用作识别二次开发贡献的时间边界。
+PROJECT_START_DATE = date.fromisoformat(os.getenv("ACTIVITY_PROJECT_START_DATE", "2026-05-12"))
+MAX_VISIBLE_PEOPLE = 3  # 上游仓库所有者置顶，再显示两名提交最多的开发者
+MAX_BRANCH_PREVIEW = 3
+GITHUB_USER_BY_AUTHOR = {
+    "Leo-John233": "Leo-John233",
+    "Linyu": "Sakuralinyu",  # 通过 GitHub 提交元数据确认
+}
 
 
 # Git 读取
@@ -220,15 +228,98 @@ def contribution_counts(history: list[dict]) -> Counter:
 
 
 def repository_statistics(history: list[dict]) -> dict:
+    # 仓库整体历史仍按完整 SHA 去重，此处保留所有历史作者统计。
     counts = Counter(c["author"] for c in history)
     return {"total_commits": len(history), "contributors": len(counts),
             "authors": counts}
 
 
+def inherited_commit_shas() -> set[str]:
+    """使用现存 Original 及上游分支的 Git 历史识别继承提交。"""
+    shas: set[str] = set()
+    for ref in (branch_ref(ORIGINAL_BRANCH), UPSTREAM_REF):
+        if git_ok("rev-parse", "--verify", f"{ref}^{{commit}}"):
+            shas.update(git("rev-list", ref).splitlines())
+    return shas
+
+
+def developer_contributors(
+    history: list[dict], inherited_shas: set[str], original_author: str
+) -> list[dict]:
+    """仅统计二次开发以来的独立有效提交，按次数与最近提交时间动态排序。"""
+    counts: Counter = Counter()
+    latest: dict[str, datetime] = {}
+    examples: dict[str, str] = {}
+    emails: dict[str, str] = {}
+    for commit in history:
+        if commit["sha"] in inherited_shas or commit["date"] < PROJECT_START_DATE:
+            continue
+        name = commit["author"]
+        if name == original_author:
+            # 原作者在维护区固定展示，其上游提交不计入二次开发者人数。
+            continue
+        counts[name] += 1
+        if name not in latest or commit["datetime"] > latest[name]:
+            latest[name] = commit["datetime"]
+            examples[name] = commit["sha"]
+            emails[name] = commit.get("email", "")
+
+    result: list[dict] = []
+    for name, count in counts.items():
+        username = GITHUB_USER_BY_AUTHOR.get(name)
+        if not username:
+            # github noreply 地址包含可验证的 GitHub 用户名。
+            match = re.fullmatch(
+                r"(?:\d+\+)?([a-zA-Z0-9-]+)@users\.noreply\.github\.com",
+                emails.get(name, "").lower(),
+            )
+            if match:
+                username = match.group(1)
+        result.append({
+            "name": name, "count": count, "latest": latest[name],
+            "last_sha": examples[name], "username": username,
+        })
+    return sorted(result, key=lambda x: (-x["count"], -x["latest"].timestamp(), x["name"].casefold()))
+
+
+@lru_cache(maxsize=1)
+def identify_upstream_author() -> dict:
+    """从上游仓库 URL 识别 GitHub 仓库所有者，并读取该账户显示名。"""
+    path_parts = urlparse(UPSTREAM_URL).path.strip("/").split("/")
+    if len(path_parts) < 2 or not path_parts[0]:
+        return {"name": "未知上游所有者", "username": None,
+                "source": "repository_owner"}
+
+    # GitHub 仓库路径 /OWNER/REPO 中的 OWNER 即仓库所有者。
+    owner = path_parts[0]
+    display_name = owner
+    request = Request(
+        f"https://api.github.com/users/{owner}",
+        headers={"User-Agent": "OnStep-Repository-Activity/1.0",
+                 "Accept": "application/vnd.github+json"},
+    )
+    try:
+        with urlopen(request, timeout=8) as response:
+            profile = json.loads(response.read(50000).decode("utf-8"))
+        if isinstance(profile, dict):
+            display_name = (profile.get("name") or "").strip() or owner
+    except (OSError, ValueError, UnicodeError) as exc:
+        # 公共 API 暂不可用时，仍使用真实的 GitHub owner 登录名。
+        print(f"无法读取上游 GitHub 所有者显示名，使用账号 {owner}: {exc}")
+
+    return {"name": display_name, "username": owner,
+            "source": "repository_owner"}
+
+
 def upstream_information() -> dict:
-    """只比较 Original 与上游 main，不比较没有共同祖先的功能分支。"""
+    """比较 Original 与上游配置分支，同时识别上游仓库所有者。"""
+    author_info = identify_upstream_author()
     info = {
-        "source": UPSTREAM_URL, "author": ORIGINAL_AUTHOR,
+        "source": UPSTREAM_URL, **{
+            "author": author_info["name"],
+            "author_username": author_info["username"],
+            "author_source": author_info["source"],
+        },
         "original_date": None, "original_sha": None,
         "upstream_date": None, "upstream_additions": None,
         "upstream_compare_url": None, "first_year": None,
@@ -259,10 +350,15 @@ def upstream_information() -> dict:
 def branch_role(branch: str) -> str:
     if branch == BASE_BRANCH:
         return "发布分支"
-    if branch.lower().endswith("dev"):
+    name = branch.lower()
+    if name.endswith("dev") or "development" in name:
         return "开发分支"
-    if "test" in branch.lower():
+    if "test" in name:
         return "测试分支"
+    if "patch" in name or "temp" in name or "tmp" in name:
+        return "临时分支"
+    if name.startswith("push/"):
+        return "协作分支"
     return "功能分支"
 
 
@@ -309,13 +405,13 @@ COMMON_STYLE = """
 .card{fill:#fff;stroke:#d0d7de;stroke-width:1}.line{stroke:#d8dee4;stroke-width:1}
 .label{fill:#57606a;font-size:14px;font-weight:600}.normal{fill:#24292f;font-size:15px}
 .bold{fill:#24292f;font-size:15px;font-weight:600}.muted{fill:#57606a;font-size:14px}
-.link{fill:#0969da;font-size:15px;font-weight:600}.tiny{fill:#57606a;font-size:13px}
+.link{fill:#0969da;font-size:15px;font-weight:600}.rightlink{fill:#0969da;font-size:14px;font-weight:600;text-anchor:end}.tiny{fill:#57606a;font-size:13px}
 .metric{fill:#24292f;font-size:23px;font-weight:650;text-anchor:middle}
 .metric-label{fill:#57606a;font-size:14px;text-anchor:middle}.subheading{fill:#24292f;font-size:15px;font-weight:600}
 @media(prefers-color-scheme:dark){
 .card{fill:#0d1117;stroke:#30363d}.title,.normal,.bold,.metric,.subheading{fill:#c9d1d9}
 .subtitle,.rightmeta,.label,.muted,.tiny,.metric-label{fill:#8b949e}.link{fill:#58a6ff}
-.line{stroke:#30363d}}
+.line{stroke:#30363d}.rightlink{fill:#58a6ff}}
 """
 ACTIVITY_STYLE = COMMON_STYLE + """
 .month,.weekday{fill:#57606a;font-size:14px}.level-0{fill:#ebedf0;stroke:rgba(27,31,35,.06);stroke-width:1}
@@ -515,8 +611,10 @@ def avatar(
 
 
 def generate_statistics_svg(
-    history: list[dict], output: Path, scope: str, upstream: dict
+    history: list[dict], output: Path, scope: str, upstream: dict,
+    developers: list[dict],
 ) -> None:
+    """三列指标和原有外观保持一致，维护者按实际开发提交动态排列。"""
     stats = repository_statistics(history)
     year = upstream["first_year"]
     year_label = f"Since {year}" if year else "上游项目"
@@ -524,10 +622,9 @@ def generate_statistics_svg(
     svg += header("仓库统计", f"统计范围 {scope}")
     svg.append(card(.5, 80.5, 1118, 319))
 
-    # 原样保留三列指标排列
     metrics = [
-        (186, f"{stats['total_commits']:,}", "分支累计提交"),
-        (560, f"{stats['contributors']:,}", "开发贡献者"),
+        (186, f"{stats['total_commits']:,}", "历史唯一提交"),
+        (560, f"{len(developers):,}", "二次开发贡献者"),
         (934, year_label, "上游项目历史"),
     ]
     for x, value, label in metrics:
@@ -539,13 +636,29 @@ def generate_statistics_svg(
         line(168),
         '<text class="text subheading" x="28" y="195">项目维护</text>',
     ])
-    svg += avatar(48, 235, "#ddf4ff", "#0969da", "Leo-John233")
-    svg += avatar(576, 235, "#fff1cc", "#9a6700", "hjd1964")
-    leo_count = stats["authors"].get(MAINTAINER, 0)
-    svg.append(svg_link(MAINTAINER, "https://github.com/Leo-John233", 80, 229))
-    svg.append(f'<text class="text muted" x="80" y="253">二次开发维护者 · {leo_count:,} 次提交</text>')
-    svg.append(svg_link(ORIGINAL_AUTHOR, "https://github.com/hjd1964", 608, 229))
-    svg.append('<text class="text muted" x="608" y="253">上游项目原作者</text>')
+
+    # 上游仓库所有者固定首位；其余开发者按独立提交数降序动态填充。
+    people = [{"name": upstream["author"], "username": upstream["author_username"],
+               "role": "上游项目原作者", "count": None}]
+    people.extend({**item, "role": ("二次开发维护者" if item["name"] == MAINTAINER
+                                  else "项目开发贡献者")} for item in developers)
+    positions = (48, 363, 678)  # 比旧版 48 和 576 的大间隔更紧凑
+    for position, person in zip(positions, people[:MAX_VISIBLE_PEOPLE]):
+        founder = person["count"] is None
+        bg, fg = ("#fff1cc", "#9a6700") if founder else ("#ddf4ff", "#0969da")
+        svg += avatar(position, 235, bg, fg, person["username"])
+        name = short_text(person["name"], 24)
+        if person["username"]:
+            svg.append(svg_link(name, f"https://github.com/{person['username']}", position + 32, 229))
+        else:
+            svg.append(f'<text class="text bold" x="{position + 32}" y="229">{esc(name)}</text>')
+        role = person["role"] if founder else f"{person['role']} · {person['count']:,} 次提交"
+        svg.append(f'<text class="text muted" x="{position + 32}" y="253">{esc(role)}</text>')
+
+    # 作者多于两名时，上游所有者加前两名显示在同一行；完整列表在 Pages 中查看。
+    if len(people) > MAX_VISIBLE_PEOPLE:
+        svg.append(svg_link("查看更多贡献者", "https://leo-john233.github.io/OnStep/contributors.html", 962, 195, "link"))
+
     svg.append(line(269))
     svg.append('<text class="text label" x="28" y="304">项目来源</text>')
     svg.append(svg_link("hjd1964/OnStep", UPSTREAM_URL, 119, 304))
@@ -558,7 +671,86 @@ def generate_statistics_svg(
             else "上游更新差异暂不可比较")
     svg.append(f'<text class="text tiny" x="119" y="368">{esc(note)}</text>')
     if upstream["upstream_compare_url"]:
-        svg.append(svg_link("查看上游更新", upstream["upstream_compare_url"], 430, 368, "link"))
+        svg.append(svg_link("查看上游更新", upstream["upstream_compare_url"], 1080, 368, "rightlink"))
+    save_svg(output, svg)
+
+
+def generate_contributors_html(developers: list[dict], upstream: dict) -> None:
+    """完整二次开发作者名单，避免维护区域随贡献者数量增长而撑开。"""
+    rows = []
+    for i, item in enumerate(developers, 1):
+        author = html.escape(item["name"])
+        username = item["username"]
+        if username:
+            author_html = f'<a href="https://github.com/{html.escape(username, quote=True)}">{author}</a>'
+            picture = f'<img src="https://github.com/{html.escape(username, quote=True)}.png?size=64" width="30" height="30" alt=""/>'
+        else:
+            author_html = author
+            picture = '<span class="no-avatar">●</span>'
+        rows.append(f'<tr><td>{i}</td><td>{picture}{author_html}</td><td>{item["count"]:,}</td>'
+                    f'<td>{item["latest"].date().isoformat()}</td></tr>')
+    table_rows = "\n".join(rows) or '<tr><td colspan="4">暂无二次开发提交</td></tr>'
+    original_name = html.escape(upstream["author"])
+    original_username = upstream.get("author_username")
+    if original_username:
+        author_link = (
+            f'<a href="https://github.com/{html.escape(original_username, quote=True)}">'
+            f'{original_name}</a>'
+        )
+    else:
+        author_link = original_name
+    page = """<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OnStep 二次开发贡献者</title><style>
+:root{color-scheme:light dark}body{margin:0 auto;max-width:1000px;padding:32px;color:#24292f;background:#fff;
+font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans CJK SC","Microsoft YaHei",Arial,sans-serif}
+h1{font-size:25px}p{color:#57606a;line-height:1.7}table{width:100%;border-collapse:collapse;border:1px solid #d0d7de;border-radius:6px}
+th,td{text-align:left;padding:11px 16px;border-bottom:1px solid #d8dee4}th{font-weight:600}a{color:#0969da;text-decoration:none}
+a:hover{text-decoration:underline}td:nth-child(2){display:flex;align-items:center;gap:10px}img{border-radius:50%;object-fit:cover}
+.no-avatar{display:inline-flex;width:30px;height:30px;border-radius:50%;background:#eaeef2;color:#57606a;align-items:center;justify-content:center}
+@media(prefers-color-scheme:dark){body{background:#0d1117;color:#c9d1d9}p{color:#8b949e}table,th,td{border-color:#30363d}a{color:#58a6ff}}
+</style></head><body>
+<h1>OnStep 二次开发贡献者</h1>
+<p>原作者：__ORIGINAL_AUTHOR_LINK__。下列开发者按照独立提交数降序排列，提交 SHA 跨功能分支去重，并排除上游原始历史与机器人提交</p>
+<p>统计起点：2026-05-12</p>
+<table><thead><tr><th>排名</th><th>开发者</th><th>有效提交</th><th>最近提交</th></tr></thead><tbody>
+__ROWS__
+</tbody></table><p><a href="./">返回仓库动态统计</a></p></body></html>
+""".replace("__ROWS__", table_rows).replace("__ORIGINAL_AUTHOR_LINK__", author_link).replace(
+        "统计起点：2026-05-12", f"统计起点：{PROJECT_START_DATE.isoformat()}"
+    )
+    (OUTPUT_DIR / "contributors.html").write_text(page, encoding="utf-8")
+
+
+def generate_branch_preview_svg(branches: list[dict], output: Path) -> None:
+    """固定分支在 README 表格中展示，这里只预览最近更新的三个其他分支。"""
+    other = [x for x in branches if x["branch"] != BASE_BRANCH]
+    other.sort(key=lambda x: (-x.get("latest_ts", 0), x["branch"]))
+    visible = other[:MAX_BRANCH_PREVIEW]
+    count = max(1, len(visible))
+    card_y, header_h, row_h, footer_h = 53, 45, 46, 42
+    height = card_y + header_h + count * row_h + footer_h + 1
+    svg = svg_open(height)
+    svg.append(f'<text class="text subtitle" x="0" y="27">自动识别 {len(other)} 个其他分支 · 按最近更新时间排序</text>')
+    svg.append(card(.5, card_y + .5, 1118, header_h + count * row_h + footer_h - 1))
+    svg.append('<text class="text label" x="28" y="82">分支</text>')
+    svg.append('<text class="text label" x="610" y="82">类型</text>')
+    svg.append('<text class="text label" x="842" y="82">最近更新</text>')
+    svg.append(line(card_y + header_h))
+    if visible:
+        for i, item in enumerate(visible):
+            y = card_y + header_h + i * row_h + 29
+            svg.append(svg_link(short_text(item["branch"], 55), item["url"], 28, y))
+            svg.append(f'<text class="text muted" x="610" y="{y}">{esc(item["role"])}</text>')
+            svg.append(f'<text class="text muted" x="842" y="{y}">{esc(item["latest_date"])}</text>')
+            if i + 1 < len(visible):
+                svg.append(line(card_y + header_h + (i + 1) * row_h, 26, 1093))
+    else:
+        svg.append('<text class="text muted" x="28" y="126">暂无其他分支</text>')
+    foot = card_y + header_h + count * row_h
+    svg.append(line(foot))
+    svg.append(f'<text class="text tiny" x="28" y="{foot + 27}">默认显示最近更新的 {min(len(other), MAX_BRANCH_PREVIEW)} 个分支</text>')
+    svg.append(svg_link("查看更多分支", "https://leo-john233.github.io/OnStep/", 1090, foot + 27, "rightlink"))
     save_svg(output, svg)
 
 
@@ -605,7 +797,7 @@ a{color:#0969da;text-decoration:none}a:hover{text-decoration:underline}
 <img id="recent" src="recent-changes.svg" alt="最近代码修改">
 <img id="activity" src="repository-activity.svg" alt="代码活动热力图">
 <img id="statistics" src="repository-statistics.svg" alt="仓库统计">
-<div class="footer"><a href="__REPO__">返回 GitHub 仓库</a></div>
+<div class="footer"><a href="contributors.html">查看二次开发贡献者</a> · <a href="__REPO__">返回 GitHub 仓库</a></div>
 </main>
 <script>
 const branchList=__BRANCHES__;
@@ -653,6 +845,7 @@ def main() -> None:
     for branch in branches:
         print(branch)
     upstream = upstream_information()
+    inherited_shas = inherited_commit_shas()
     recent_histories: dict[str, list[dict]] = {}
     full_histories: dict[str, list[dict]] = {}
     branch_details: list[dict] = []
@@ -664,15 +857,22 @@ def main() -> None:
         full = load_full_history(ref)
         recent_histories[branch] = recent
         full_histories[branch] = full
+        latest_raw = git("log", "-1", "--format=%cI", ref).strip()
+        try:
+            latest_dt = datetime.fromisoformat(latest_raw) if latest_raw else None
+        except ValueError:
+            latest_dt = None
         branch_details.append({
             "branch": branch, "slug": slug(branch), "role": branch_role(branch),
             "recent_commits": len(last_n_days(recent, RECENT_DAYS)),
             "total_commits": len(full), "url": branch_url(branch),
+            "latest_ts": latest_dt.timestamp() if latest_dt else 0,
+            "latest_date": latest_dt.date().isoformat() if latest_dt else "未知",
         })
         directory = OUTPUT_DIR / "branches" / slug(branch)
         generate_recent_svg(recent, directory / "recent-changes.svg", branch)
         generate_activity_svg(recent, directory / "repository-activity.svg", branch)
-        generate_statistics_svg(full, directory / "repository-statistics.svg", branch, upstream)
+        generate_statistics_svg(full, directory / "repository-statistics.svg", branch, upstream, developer_contributors(full, inherited_shas, upstream["author"]))
 
     # 只有发布分支的最近修改单独展示
     generate_recent_svg(
@@ -684,7 +884,10 @@ def main() -> None:
     all_full = combine_histories(list(full_histories.values()))
     scope = f"{len(branches)} 个分支"
     generate_activity_svg(all_recent, OUTPUT_DIR / "repository-activity.svg", scope)
-    generate_statistics_svg(all_full, OUTPUT_DIR / "repository-statistics.svg", scope, upstream)
+    developers = developer_contributors(all_full, inherited_shas, upstream["author"])
+    generate_statistics_svg(all_full, OUTPUT_DIR / "repository-statistics.svg", scope, upstream, developers)
+    generate_contributors_html(developers, upstream)
+    generate_branch_preview_svg(branch_details, OUTPUT_DIR / "branch-preview.svg")
     generate_index_html(branch_details)
 
     stats = repository_statistics(all_full)
@@ -696,21 +899,25 @@ def main() -> None:
         "generated_at": datetime.now(TZ).isoformat(),
         "counting_method": "unique_full_commit_sha_across_active_branches",
         "total_commits": stats["total_commits"],
-        "contributors": stats["contributors"],
-        "maintainer_commits": stats["authors"].get(MAINTAINER, 0),
+        "contributors": len(developers),
+        "historical_authors": stats["contributors"],
+        "maintainer_commits": next((x["count"] for x in developers if x["name"] == MAINTAINER), 0),
+        "developers": [{"name": x["name"], "username": x["username"], "commits": x["count"],
+                        "last_date": x["latest"].date().isoformat()} for x in developers],
         "activity_last_year": sum(contribution_counts(all_recent).values()),
         "recent_changes_branch": BASE_BRANCH,
         "upstream": upstream,
         "filters": {
             "activity": "排除机器人和只修改 README 或 .github 的提交",
             "statistics": "有效分支全部非机器人提交 按完整 SHA 跨分支去重",
+            "developers": f"项目建立于 {PROJECT_START_DATE.isoformat()}，排除 Original 和上游历史 SHA",
         },
     }
     (OUTPUT_DIR / "repository-summary.json").write_text(
         json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     print(f"分支累计提交 {stats['total_commits']:,}")
-    print(f"开发贡献者 {stats['contributors']}")
+    print(f"二次开发贡献者 {len(developers)}，历史作者 {stats['contributors']}")
     print(f"近一年有效代码提交 {summary['activity_last_year']:,}")
     print(f"生成完成 {OUTPUT_DIR}")
 
