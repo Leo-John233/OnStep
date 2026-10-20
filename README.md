@@ -24,12 +24,7 @@
 | [OnStep4.24-Original](https://github.com/Leo-John233/OnStep/tree/OnStep4.24-Original) | 上游 `hjd1964/OnStep` 的 `release-4.24` 原始基线，自动同步并保留完整 Git 历史 |
 
 ### 其他分支
-
 ![其他分支预览](https://leo-john233.github.io/OnStep/branch-preview.svg)
-
-[查看更多分支及切换统计](https://leo-john233.github.io/OnStep/)
-
-所有非 Original 的分支均自动纳入代码统计，其他分支默认显示最近更新的 3 个，新增或删除分支后由 GitHub Actions 自动刷新
 
 ## 主要修改
 
