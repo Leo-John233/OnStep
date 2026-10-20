@@ -20,21 +20,16 @@
 
 | 分支 | 用途 |
 | --- | --- |
-| `release-4.24-original` | 保存原始 OnStep 4.24 基线，用于代码比较和版本参考 |
-| `release-4.24` | 当前自定义稳定版本 |
-| `release-4.24-dev` | 开发和测试版本 |
+| [OnStep4.24-FeatureRelease](https://github.com/Leo-John233/OnStep/tree/OnStep4.24-FeatureRelease) | 默认发布分支，推荐普通用户使用 |
+| [OnStep4.24-Original](https://github.com/Leo-John233/OnStep/tree/OnStep4.24-Original) | 上游 `hjd1964/OnStep` 的 `release-4.24` 原始基线，自动同步并保留完整 Git 历史 |
 
-一般使用建议选择：
+### 其他分支
 
-`OnStep4.24-FeatureRelease`
+![其他分支预览](https://leo-john233.github.io/OnStep/branch-preview.svg)
 
-开发中的功能和未经完整验证的修改位于：
+[查看更多分支及切换统计](https://leo-john233.github.io/OnStep/)
 
-`OnStep4.24-FeatureDev`
-
-原始 OnStep 4.24 基线保存在：
-
-`OnStep4.24-Original`
+所有非 Original 的分支均自动纳入代码统计，其他分支默认显示最近更新的 3 个，新增或删除分支后由 GitHub Actions 自动刷新
 
 ## 主要修改
 
@@ -159,22 +154,22 @@ Custom modifications and maintenance:
 
 ---
 
-## 📝 最近代码修改
 
-![Recent Changes](https://leo-john233.github.io/OnStep/recent-changes.svg)
+<!-- repository-activity:start -->
 
-[查看完整提交记录](https://github.com/Leo-John233/OnStep/commits/OnStep4.24-FeatureRelease)
+<a name="最近代码修改"></a>
 
-## 🟩 Repository Activity
+![最近代码修改](https://leo-john233.github.io/OnStep/recent-changes.svg)
 
-![Repository Activity](https://leo-john233.github.io/OnStep/repository-activity.svg)
+[查看发布分支完整提交记录](https://github.com/Leo-John233/OnStep/commits/OnStep4.24-FeatureRelease)
 
-![Repository Statistics](https://leo-john233.github.io/OnStep/repository-statistics.svg)
+![代码活动热力图](https://leo-john233.github.io/OnStep/repository-activity.svg)
 
-## 🌿 Branches
+![仓库统计](https://leo-john233.github.io/OnStep/repository-statistics.svg)
 
-![Branch Statistics](https://leo-john233.github.io/OnStep/branch-statistics.svg)
+[查看全部二次开发贡献者](https://leo-john233.github.io/OnStep/contributors.html)
 
-[打开完整分支统计与切换页面](https://leo-john233.github.io/OnStep/)
+[查看完整分支统计与切换页面](https://leo-john233.github.io/OnStep/)
 
-[View all contributors](https://github.com/Leo-John233/OnStep/graphs/contributors)
+<!-- repository-activity:end -->
+
