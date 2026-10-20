@@ -1,13 +1,10 @@
 name: Update Repository Activity
 
 on:
-  # Refresh immediately on activity in any functional branch.
   push:
     branches:
-      - "**"
-      - "!OnStep4.24-Original"
+      - "OnStep4.24-FeatureRelease"
   workflow_dispatch:
-  # Beijing time: Monday 09:27 (UTC Monday 01:27)
   schedule:
     - cron: "27 1 * * 1"
 
